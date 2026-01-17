@@ -5,6 +5,7 @@ export interface ILecture {
   lectureId: string;
   lectureTitle: string;
   courseId: string;
+  videoUrl?: string;
   createdAt: Date;
   studentRewindEvents: Array<{
     studentId: string;
@@ -30,6 +31,7 @@ const LectureSchema = new Schema<ILecture>({
   lectureId: { type: String, required: true, unique: true },
   lectureTitle: { type: String, required: true },
   courseId: { type: String, required: true },
+  videoUrl: { type: String },
   createdAt: { type: Date, default: Date.now },
   studentRewindEvents: { type: [StudentRewindEventsSchema], default: [] },
 });
@@ -41,9 +43,8 @@ const LecturerSchema = new Schema<ILecturer>({
   updatedAt: { type: Date, default: Date.now },
 });
 
-LecturerSchema.pre('save', function(next) {
+LecturerSchema.pre('save', function() {
   this.updatedAt = new Date();
-  next();
 });
 
 export const Lecturer = mongoose.model<ILecturer>('Lecturer', LecturerSchema);
