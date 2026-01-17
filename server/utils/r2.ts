@@ -2,8 +2,14 @@ import { S3Client } from '@aws-sdk/client-s3';
 import dotenv from 'dotenv';
 import path from 'path';
 
+import { fileURLToPath } from 'url';
+
+// 1. Get the directory of the current file (server/utils/)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Load environment variables
-const envPath = path.resolve(process.cwd(), '.env');
+const envPath = path.resolve(__dirname, '../.env');
 dotenv.config({ path: envPath });
 
 // Cloudflare R2 configuration
@@ -32,8 +38,8 @@ export const s3Client = new S3Client({
   },
 });
 
-export const BUCKET_NAME = R2_BUCKET_NAME;
-export const PUBLIC_URL = R2_PUBLIC_URL;
+export const BUCKET_NAME = process.env.R2_BUCKET_NAME;
+export const PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
 // Helper to generate a unique file key
 export const generateVideoKey = (userId: string, lectureId: string, filename: string): string => {
