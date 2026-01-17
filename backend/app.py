@@ -7,7 +7,7 @@ def create_app():
 
     @app.get("/health")
     def health():
-        return jsonify(status="ok")
+        return {"status": "ok", "server": "Flask"}, 200
     
     @app.route('/api/hello', methods=['GET'])  # match Vite proxy prefix
     def test():

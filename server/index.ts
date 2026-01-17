@@ -35,9 +35,9 @@ app.use('/api/students', studentsRoutes);
 app.use('/api/upload/direct', express.raw({ type: 'video/*', limit: '500mb' }));
 app.use('/api/upload', uploadRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
+// health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', server: 'Express' });
 });
 
 app.listen(PORT, () => {
