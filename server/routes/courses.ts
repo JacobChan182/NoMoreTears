@@ -28,8 +28,23 @@ router.post('/', async (req: Request, res: Response) => {
     await newCourse.save();
 
     res.status(201).json({ success: true, data: newCourse });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating course:', error);
+    
+    // Handle duplicate key error for old userId index
+    if (error.code === 11000 && error.keyPattern?.userId) {
+      console.error('⚠️  Old userId index detected. Please restart the server to clean up indexes.');
+      return res.status(500).json({ 
+        error: 'Database index conflict. Please restart the server to fix this issue.',
+        details: 'The database has an old index that needs to be removed. Restarting the server will automatically fix this.'
+      });
+    }
+    
+    // Handle duplicate courseId error
+    if (error.code === 11000 && error.keyPattern?.courseId) {
+      return res.status(409).json({ error: 'Course with this ID already exists' });
+    }
+    
     res.status(500).json({ error: 'Failed to create course' });
   }
 });
