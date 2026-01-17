@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { User, UserRole, BehavioralCluster } from '@/types';
 import { generatePseudonymId } from '@/data/mockData';
+import { trackLoginEvent } from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -16,7 +17,7 @@ const clusters: BehavioralCluster[] = ['high-replay', 'fast-watcher', 'note-take
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
 
-  const login = useCallback((role: UserRole) => {
+  const login = useCallback(async (role: UserRole) => {
     const newUser: User = {
       id: `${role}-${Date.now()}`,
       pseudonymId: generatePseudonymId(),
@@ -26,6 +27,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date(),
     };
     setUser(newUser);
+
+    // Track login/signup event to MongoDB
+    try {
+      await trackLoginEvent(
+        newUser.id,
+        newUser.pseudonymId,
+        role,
+        'signin' // You can change this to 'signup' if this is first-time registration
+      );
+    } catch (error) {
+      console.error('Failed to track login event to MongoDB:', error);
+      // Continue even if API call fails
+    }
   }, []);
 
   const logout = useCallback(() => {
