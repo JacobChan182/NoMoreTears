@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import UploadVideo from '@/components/UploadVideo';
 
 const CHART_COLORS = [
   'hsl(173, 80%, 40%)',
@@ -120,6 +121,13 @@ const InstructorDashboard = () => {
                   {lecture.title.substring(0, 20)}...
                 </Button>
               ))}
+              <UploadVideo 
+                courseId={selectedLecture.courseId}
+                onUploadComplete={(lectureId, videoUrl) => {
+                  console.log('Upload complete:', lectureId, videoUrl);
+                  // Optionally refresh lectures or add to list
+                }}
+              />
             </div>
           </div>
         </motion.div>

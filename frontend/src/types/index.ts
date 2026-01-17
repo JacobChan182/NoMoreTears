@@ -38,7 +38,7 @@ export interface Lecture {
   uploadedAt: Date;
 }
 
-export type EventType = 'play' | 'pause' | 'replay' | 'seek' | 'drop-off' | 'speed-change' | 'concept-jump';
+export type EventType = 'play' | 'pause' | 'replay' | 'seek' | 'rewind' | 'drop-off' | 'speed-change' | 'concept-jump';
 
 export interface AnalyticsEvent {
   id: string;

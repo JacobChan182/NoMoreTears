@@ -16,8 +16,9 @@ import { Progress } from '@/components/ui/progress';
 
 const StudentDashboard = () => {
   const { user, logout } = useAuth();
-  const { trackEvent } = useAnalytics();
+  const { trackEvent, trackRewind } = useAnalytics();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previousTimeRef = useRef<number>(0);
   const [selectedLecture, setSelectedLecture] = useState(mockLectures[0]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -26,6 +27,12 @@ const StudentDashboard = () => {
   const [activeConcept, setActiveConcept] = useState<Concept | null>(null);
 
   const course = mockCourses.find(c => c.id === selectedLecture.courseId);
+
+  // Reset previous time when lecture changes
+  useEffect(() => {
+    previousTimeRef.current = 0;
+    setCurrentTime(0);
+  }, [selectedLecture.id]);
 
   // Track current concept based on video time
   useEffect(() => {
@@ -52,8 +59,33 @@ const StudentDashboard = () => {
 
   const jumpToConcept = (concept: Concept) => {
     if (videoRef.current) {
-      videoRef.current.currentTime = concept.startTime;
-      setCurrentTime(concept.startTime);
+      const previousTime = previousTimeRef.current;
+      const newTime = concept.startTime;
+      
+      // Track rewind if jumping backwards
+      if (newTime < previousTime && trackRewind && course) {
+        const previousConcept = selectedLecture.concepts.find(
+          c => previousTime >= c.startTime && previousTime < c.endTime
+        );
+        trackRewind(
+          selectedLecture.id,
+          selectedLecture.title,
+          course.id,
+          {
+            fromTime: previousTime,
+            toTime: newTime,
+            rewindAmount: previousTime - newTime,
+            fromConceptId: previousConcept?.id,
+            fromConceptName: previousConcept?.name,
+            toConceptId: concept.id,
+            toConceptName: concept.name,
+          }
+        );
+      }
+      
+      videoRef.current.currentTime = newTime;
+      previousTimeRef.current = newTime;
+      setCurrentTime(newTime);
       trackEvent('concept-jump', selectedLecture.id, concept.id);
       if (!isPlaying) {
         videoRef.current.play();
@@ -64,7 +96,43 @@ const StudentDashboard = () => {
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+      const newTime = videoRef.current.currentTime;
+      const previousTime = previousTimeRef.current;
+      
+      // Detect rewind: current time is less than previous time
+      // Only track if there's a meaningful rewind (more than 0.5 seconds to avoid false positives)
+      if (previousTime > 0 && newTime < previousTime - 0.5) {
+        const rewindAmount = previousTime - newTime;
+        
+        // Find concepts at both positions
+        const previousConcept = selectedLecture.concepts.find(
+          c => previousTime >= c.startTime && previousTime < c.endTime
+        );
+        const newConcept = selectedLecture.concepts.find(
+          c => newTime >= c.startTime && newTime < c.endTime
+        );
+        
+        // Track rewind event to MongoDB
+        if (trackRewind && course) {
+          trackRewind(
+            selectedLecture.id,
+            selectedLecture.title,
+            course.id,
+            {
+              fromTime: previousTime,
+              toTime: newTime,
+              rewindAmount: rewindAmount,
+              fromConceptId: previousConcept?.id,
+              fromConceptName: previousConcept?.name,
+              toConceptId: newConcept?.id,
+              toConceptName: newConcept?.name,
+            }
+          );
+        }
+      }
+      
+      previousTimeRef.current = newTime;
+      setCurrentTime(newTime);
     }
   };
 

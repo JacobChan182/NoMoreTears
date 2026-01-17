@@ -1,9 +1,19 @@
 import React, { createContext, useContext, useCallback, useState } from 'react';
 import { AnalyticsEvent, EventType } from '@/types';
 import { useAuth } from './AuthContext';
+import { trackRewindEvent } from '@/lib/api';
 
 interface AnalyticsContextType {
   trackEvent: (eventType: EventType, lectureId: string, conceptId?: string, metadata?: Record<string, unknown>) => void;
+  trackRewind: (lectureId: string, lectureTitle: string, courseId: string, rewindData: {
+    fromTime: number;
+    toTime: number;
+    rewindAmount: number;
+    fromConceptId?: string;
+    fromConceptName?: string;
+    toConceptId?: string;
+    toConceptName?: string;
+  }) => void;
   events: AnalyticsEvent[];
 }
 
@@ -12,6 +22,90 @@ const AnalyticsContext = createContext<AnalyticsContextType | undefined>(undefin
 export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [events, setEvents] = useState<AnalyticsEvent[]>([]);
+
+  const trackRewind = useCallback(async (
+    lectureId: string,
+    lectureTitle: string,
+    courseId: string,
+    rewindData: {
+      fromTime: number;
+      toTime: number;
+      rewindAmount: number;
+      fromConceptId?: string;
+      fromConceptName?: string;
+      toConceptId?: string;
+      toConceptName?: string;
+    }
+  ) => {
+    if (!user) return;
+
+    const rewindEvent = {
+      id: `rewind-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      fromTime: rewindData.fromTime,
+      toTime: rewindData.toTime,
+      rewindAmount: rewindData.rewindAmount,
+      fromConceptId: rewindData.fromConceptId,
+      fromConceptName: rewindData.fromConceptName,
+      toConceptId: rewindData.toConceptId,
+      toConceptName: rewindData.toConceptName,
+      timestamp: Date.now(),
+      createdAt: new Date(),
+    };
+
+    try {
+      // Store in MongoDB Atlas
+      await trackRewindEvent(
+        user.id,
+        user.pseudonymId,
+        lectureId,
+        lectureTitle,
+        courseId,
+        rewindEvent
+      );
+      
+      // Also add to local state for immediate UI updates
+      const event: AnalyticsEvent = {
+        id: rewindEvent.id,
+        userId: user.id,
+        courseId,
+        lectureId,
+        conceptId: rewindData.toConceptId,
+        eventType: 'rewind' as EventType,
+        timestamp: rewindEvent.timestamp,
+        metadata: {
+          fromTime: rewindData.fromTime,
+          toTime: rewindData.toTime,
+          rewindAmount: rewindData.rewindAmount,
+          fromConceptId: rewindData.fromConceptId,
+          fromConceptName: rewindData.fromConceptName,
+          toConceptId: rewindData.toConceptId,
+          toConceptName: rewindData.toConceptName,
+        },
+        createdAt: rewindEvent.createdAt,
+      };
+      
+      setEvents(prev => [...prev, event]);
+    } catch (error) {
+      console.error('Failed to track rewind event to MongoDB:', error);
+      // Still add to local state even if API call fails
+      const event: AnalyticsEvent = {
+        id: rewindEvent.id,
+        userId: user.id,
+        courseId,
+        lectureId,
+        conceptId: rewindData.toConceptId,
+        eventType: 'rewind' as EventType,
+        timestamp: rewindEvent.timestamp,
+        metadata: {
+          fromTime: rewindData.fromTime,
+          toTime: rewindData.toTime,
+          rewindAmount: rewindData.rewindAmount,
+        },
+        createdAt: rewindEvent.createdAt,
+      };
+      setEvents(prev => [...prev, event]);
+    }
+  }, [user]);
 
   const trackEvent = useCallback((
     eventType: EventType,
@@ -35,18 +129,20 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     setEvents(prev => [...prev, event]);
     
-    // Simulate sending to Amplitude
-    console.log('[EduPulse Analytics]', {
-      event: eventType,
-      user: user.pseudonymId,
-      lecture: lectureId,
-      concept: conceptId,
-      ...metadata,
-    });
+    // Log other events (not rewind - those are handled by trackRewind)
+    if (eventType !== 'rewind') {
+      console.log('[EduPulse Analytics]', {
+        event: eventType,
+        user: user.pseudonymId,
+        lecture: lectureId,
+        concept: conceptId,
+        ...metadata,
+      });
+    }
   }, [user]);
 
   return (
-    <AnalyticsContext.Provider value={{ trackEvent, events }}>
+    <AnalyticsContext.Provider value={{ trackEvent, trackRewind, events }}>
       {children}
     </AnalyticsContext.Provider>
   );

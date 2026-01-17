@@ -1,39 +1,84 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { User, UserRole, BehavioralCluster } from '@/types';
-import { generatePseudonymId } from '@/data/mockData';
+import { signup, signin } from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
-  login: (role: UserRole) => void;
+  signup: (email: string, password: string, role: UserRole) => Promise<void>;
+  signin: (email: string, password: string, role: UserRole) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const clusters: BehavioralCluster[] = ['high-replay', 'fast-watcher', 'note-taker', 'late-night-learner', 'steady-pacer'];
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const login = useCallback((role: UserRole) => {
-    const newUser: User = {
-      id: `${role}-${Date.now()}`,
-      pseudonymId: generatePseudonymId(),
-      role,
-      courseIds: ['course-1', 'course-2'],
-      cluster: role === 'student' ? clusters[Math.floor(Math.random() * clusters.length)] : undefined,
-      createdAt: new Date(),
-    };
-    setUser(newUser);
+  const handleSignup = useCallback(async (email: string, password: string, role: UserRole) => {
+    try {
+      setError(null);
+      const response = await signup(email, password, role);
+      
+      if (response.success && response.data) {
+        const userData = response.data;
+        const newUser: User = {
+          id: userData.id,
+          pseudonymId: userData.pseudonymId,
+          role: userData.role,
+          courseIds: userData.courseIds || [],
+          cluster: userData.cluster as BehavioralCluster | undefined,
+          createdAt: new Date(userData.createdAt),
+        };
+        setUser(newUser);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to sign up';
+      setError(errorMessage);
+      throw err;
+    }
+  }, []);
+
+  const handleSignin = useCallback(async (email: string, password: string, role: UserRole) => {
+    try {
+      setError(null);
+      const response = await signin(email, password, role);
+      
+      if (response.success && response.data) {
+        const userData = response.data;
+        const newUser: User = {
+          id: userData.id,
+          pseudonymId: userData.pseudonymId,
+          role: userData.role,
+          courseIds: userData.courseIds || [],
+          cluster: userData.cluster as BehavioralCluster | undefined,
+          createdAt: new Date(userData.createdAt),
+        };
+        setUser(newUser);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in';
+      setError(errorMessage);
+      throw err;
+    }
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
+    setError(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      signup: handleSignup, 
+      signin: handleSignin, 
+      logout, 
+      isAuthenticated: !!user,
+      error,
+    }}>
       {children}
     </AuthContext.Provider>
   );
