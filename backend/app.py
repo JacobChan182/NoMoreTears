@@ -3,6 +3,8 @@ from flask_cors import CORS
 from twelvelabs import TwelveLabs
 import os
 from dotenv import load_dotenv
+from backboard import BackboardClient
+import asyncio
 
 load_dotenv()
 
