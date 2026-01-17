@@ -7,6 +7,7 @@ from backboard import BackboardClient
 import asyncio
 from pymongo import MongoClient
 from datetime import datetime
+from services.video_service import start_video_indexing
 
 load_dotenv()
 
@@ -26,8 +27,11 @@ def create_app():
 
     TL_API_KEY = os.getenv("TL_API_KEY")
     if not TL_API_KEY:
+    # Initialize Twelve Labs client
+    TWELVELABS_API_KEY = os.getenv("TWELVELABS_API_KEY")
+    if not TWELVELABS_API_KEY:
         raise RuntimeError("Missing TWELVE_LABS_API_KEY env var")
-    tl = TwelveLabs(api_key=TL_API_KEY)
+    tl = TwelveLabs(api_key=TWELVELABS_API_KEY)
 
     @app.post('/api/backboard/chat')
     def backboard_chat():
@@ -334,6 +338,34 @@ Task: {task}
             return {"status": "connected", "index_count": len(indexes)}, 200
         except Exception as e:
             return {"status": "error", "message": str(e)}, 500
+        
+    @app.route('/api/index-video', methods=['POST'])
+    def handle_index_request():
+        try:
+            data = request.json
+            print(f"DEBUG: Received data: {data}") # See what Express sent
+            
+            video_url = data.get('videoUrl')
+            lecture_id = data.get('lectureId')
+
+            if not video_url:
+                return jsonify({"error": "No video URL provided"}), 400
+
+            # Trigger the Twelve Labs indexing process
+            task_id = start_video_indexing(video_url)
+            
+            if task_id:
+                return jsonify({
+                    "success": True, 
+                    "message": "Indexing task created", 
+                    "task_id": task_id
+                }), 202
+            else:
+                return jsonify({"error": "Failed to start indexing"}), 500
+        
+        except Exception as e:
+            print(f"CRITICAL ROUTE ERROR: {e}") # This will show in your terminal
+            return jsonify({"error": str(e)}), 500
 
     return app
 
