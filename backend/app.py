@@ -3,7 +3,7 @@ from flask_cors import CORS
 from twelvelabs import TwelveLabs
 import os
 from dotenv import load_dotenv
-from backboard import BackboardClient
+from backboard.client import BackboardClient
 import asyncio
 from pymongo import MongoClient
 from datetime import datetime
@@ -27,8 +27,8 @@ def create_app():
 
     TL_API_KEY = os.getenv("TL_API_KEY")
     if not TL_API_KEY:
-    # Initialize Twelve Labs client
-    TWELVELABS_API_KEY = os.getenv("TWELVELABS_API_KEY")
+        # Initialize Twelve Labs client
+        TWELVELABS_API_KEY = os.getenv("TWELVELABS_API_KEY")
     if not TWELVELABS_API_KEY:
         raise RuntimeError("Missing TWELVE_LABS_API_KEY env var")
     tl = TwelveLabs(api_key=TWELVELABS_API_KEY)
