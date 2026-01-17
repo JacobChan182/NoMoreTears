@@ -1,8 +1,6 @@
-import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url'; // This is what was missing
+import { fileURLToPath } from 'url'; 
 
 // These two lines recreate __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +9,13 @@ const __dirname = path.dirname(__filename);
 // Load environment variables from project root BEFORE importing other modules
 const envPath = path.resolve(__dirname, '.env');
 dotenv.config({ path: envPath });
+console.log('Bucket Name:', process.env.R2_BUCKET_NAME);
+
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url'; // This is what was missing
+
 
 import connectDB from './db';
 import analyticsRoutes from './routes/analytics';
@@ -23,11 +28,9 @@ import uploadRoutes from './routes/upload';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '500mb' }));
 
-// Connect to MongoDB
 connectDB().catch(console.error);
 
 // Routes

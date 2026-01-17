@@ -31,7 +31,7 @@ router.post('/:userId/lectures', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    let student = await Student.findOne({ userId });
+    const student = await Student.findOne({ userId });
 
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });

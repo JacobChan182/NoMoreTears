@@ -32,6 +32,7 @@ router.post('/rewind', async (req: Request, res: Response) => {
         lectures: [{
           lectureId,
           lectureTitle,
+          courseId,
           rewindEvents: [rewindEvent],
           lastAccessedAt: new Date(),
         }],
@@ -39,13 +40,15 @@ router.post('/rewind', async (req: Request, res: Response) => {
       await newStudent.save();
     } else {
       // Update existing student
-      let lectureProgress = student.lectures.find(l => l.lectureId === lectureId);
+      const lectureProgress = student.lectures.find(l => l.lectureId === lectureId);
       
       if (!lectureProgress) {
         // Add new lecture assignment
         student.lectures.push({
           lectureId,
           lectureTitle,
+          courseId,
+          assignedAt: new Date(),
           rewindEvents: [rewindEvent],
           lastAccessedAt: new Date(),
         });
@@ -109,7 +112,7 @@ router.post('/rewind', async (req: Request, res: Response) => {
           await lecturer.save();
         } else {
           // Lecture exists, add rewind event
-          let studentRewindData = existingLecture.studentRewindEvents.find(
+          const studentRewindData = existingLecture.studentRewindEvents.find(
             s => s.studentId === userId
           );
           
@@ -131,7 +134,7 @@ router.post('/rewind', async (req: Request, res: Response) => {
       const lecture = lecturer.lectures.find(l => l.lectureId === lectureId);
       
       if (lecture) {
-        let studentRewindData = lecture.studentRewindEvents.find(
+        const studentRewindData = lecture.studentRewindEvents.find(
           s => s.studentId === userId
         );
         

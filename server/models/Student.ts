@@ -4,6 +4,7 @@ import { IRewindEvent } from './RewindEvent';
 export interface ILectureProgress {
   lectureId: string;
   lectureTitle: string;
+  courseId: string;
   assignedAt: Date;
   rewindEvents: IRewindEvent[];
   lastAccessedAt?: Date;
@@ -21,9 +22,10 @@ export interface IStudent {
 
 const LectureProgressSchema = new Schema<ILectureProgress>({
   lectureId: { type: String, required: true },
+  courseId: { type: String, required: true },
   lectureTitle: { type: String, required: true },
   assignedAt: { type: Date, default: Date.now },
-  rewindEvents: { type: [Schema.Types.Mixed], default: [] },
+  rewindEvents: { type: Schema.Types.Mixed, default: [] },
   lastAccessedAt: { type: Date },
 });
 
@@ -37,9 +39,8 @@ const StudentSchema = new Schema<IStudent>({
   updatedAt: { type: Date, default: Date.now },
 });
 
-StudentSchema.pre('save', function(next) {
+StudentSchema.pre('save', function(this: IStudent) {
   this.updatedAt = new Date();
-  next();
 });
 
 export const Student = mongoose.model<IStudent>('Student', StudentSchema);

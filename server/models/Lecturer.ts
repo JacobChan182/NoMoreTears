@@ -43,7 +43,7 @@ const LecturerSchema = new Schema<ILecturer>({
   updatedAt: { type: Date, default: Date.now },
 });
 
-LecturerSchema.pre('save', function() {
+LecturerSchema.pre('save', function(this: ILecturer) {
   this.updatedAt = new Date();
 });
 

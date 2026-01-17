@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Use proxy in development, or explicit URL if set
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : 'http://localhost:3001/api');
+// Use explicit URL from env or fallback to localhost
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 interface UploadVideoProps {
   courseId: string;

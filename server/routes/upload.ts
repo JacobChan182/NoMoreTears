@@ -84,11 +84,11 @@ router.post('/complete', async (req: Request, res: Response) => {
     const videoUrl = getVideoUrl(videoKey);
 
     // Find or create the lecture
-    let lecture = lecturer.lectures.find(l => l.lectureId === lectureId);
+    const lecture = lecturer.lectures.find(l => l.lectureId === lectureId);
 
     if (lecture) {
       // Update existing lecture with video URL
-      (lecture as any).videoUrl = videoUrl;
+      lecture.videoUrl = videoUrl;
     } else {
       // Create new lecture entry
       lecturer.lectures.push({
