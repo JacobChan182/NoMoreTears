@@ -84,66 +84,55 @@ router.post('/complete', async (req: Request, res: Response) => {
     const { userId, lectureId, videoKey, lectureTitle, courseId } = req.body;
 
     if (!userId || !lectureId || !videoKey || !courseId) {
-      return res.status(400).json({ error: 'Missing required fields (userId, lectureId, videoKey, courseId)' });
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
     // A. Verify Course and Permissions
     const course = await Course.findOne({ courseId });
-    if (!course) {
-      return res.status(404).json({ error: `Course ${courseId} not found.` });
-    }
-    if (course.instructorId !== userId) {
-      return res.status(403).json({ error: 'Permission denied: You do not own this course' });
-    }
+    if (!course) return res.status(404).json({ error: `Course ${courseId} not found.` });
+    if (course.instructorId !== userId) return res.status(403).json({ error: 'Permission denied' });
 
-    // B. Generate signed URL for Twelve Labs (Flask) access
+    // B. Generate signed URL for Twelve Labs
     const downloadCommand = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: videoKey });
     const signedDownloadUrl = await getSignedUrl(s3Client, downloadCommand, { expiresIn: 3600 });
 
-    // Initialize segments early to avoid ReferenceError
-    let segments: Array<{ start: number; end: number; title: string; summary?: string }> = [];
+    let segments: any[] = [];
+    let fullAiData: any = null;
+    let videoIdFromTask: string | null = null;
 
-    // Health check with retry
+    // C. Flask Integration (Single Flow)
     const health = await tryFlask(() => flask.get('/health'), 'Flask health check');
     if (health) {
-      // Trigger indexing and capture taskId
+      // 1. Start Indexing
       const indexResp = await tryFlask(() => flask.post('/api/index-video', { videoUrl: signedDownloadUrl, lectureId }), 'Indexing trigger');
-      const taskId = (indexResp as any)?.data?.task_id;
-      if (taskId) console.log(`[Node] TwelveLabs taskId=${taskId} (use /api/task-status?taskId=... on Flask to check progress)`);
+      // Adjust this based on what your Flask returns. If it returns video_id, use it!
+      videoIdFromTask = (indexResp as any)?.data?.video_id || null;
 
-      // Fire segmentation (may take minutes); don't block overall success
-      const flaskLong = axios.create({ baseURL: FLASK_BASE_URL, timeout: 300000 });
+      // 2. Perform Segmentation (Wait for it)
+      const flaskLong = axios.create({ baseURL: FLASK_BASE_URL, timeout: 600000 }); // 10 min timeout
       try {
-        const segResp = await flaskLong.post('/api/segment-video', { videoUrl: signedDownloadUrl, lectureId });
+        console.log(`[Node] Requesting segmentation for ${lectureId}...`);
+        const segResp = await flaskLong.post('/api/segment-video', { 
+          videoUrl: signedDownloadUrl, 
+          lectureId,
+          videoId: videoIdFromTask // Pass ID if available to prevent double-indexing
+        });
+        
         segments = segResp.data?.segments || [];
-        console.log(`[Node] lectureId=${lectureId} segments=${segments.length}`);
+        fullAiData = segResp.data?.full_data || null;
+        // LOG THIS IN YOUR TERMINAL
+        console.log("--- DATA VALIDATION ---");
+        console.log("Lecture ID:", lectureId);
+        console.log("Segments Length:", segments.length);
+        console.log("Full AI Data Type:", typeof fullAiData);
+        console.log("Full AI Data Content:", JSON.stringify(fullAiData).substring(0, 100));
+        console.log(`[Node] Received ${segments.length} segments.`);
       } catch (segErr: any) {
-        console.warn('Segmentation still running or timed out; results will not block upload.', segErr?.message || segErr);
+        console.error('[Node] Segmentation error:', segErr.message);
       }
-    } else {
-      console.error('Skipping Twelve Labs calls due to unreachable Flask.');
     }
 
     const videoUrl = getVideoUrl(videoKey);
-
-    let fullAiData: any = null; // To store the raw JSON object
-
-    const flaskLong = axios.create({ baseURL: FLASK_BASE_URL, timeout: 300000 });
-    try {
-      const segResp = await flaskLong.post('/api/segment-video', { 
-        videoUrl: signedDownloadUrl, 
-        lectureId 
-      });
-      
-      // Destructure the new response format from Python
-      segments = segResp.data?.segments || [];
-      fullAiData = segResp.data?.full_data || null;
-      
-      console.log(`[Node] Received ${segments.length} segments and raw metadata.`);
-    } catch (segErr: any) {
-      console.warn('Segmentation failed', segErr.message);
-    }
-
     const lectureData = {
       lectureId,
       lectureTitle: lectureTitle || 'Untitled Lecture',
@@ -152,39 +141,45 @@ router.post('/complete', async (req: Request, res: Response) => {
       createdAt: new Date(),
       studentRewindEvents: [],
       lectureSegments: segments,
-      rawAiMetadata: fullAiData
+      rawAiMetadata: fullAiData || {}
     };
 
-    // D. Update Course Model
+    // D. Update Course Model (Update existing or push new)
     const courseLectureIndex = course.lectures.findIndex(l => l.lectureId === lectureId);
     if (courseLectureIndex > -1) {
-      course.lectures[courseLectureIndex].videoUrl = videoUrl;
+      // Use Object.assign or spread to update existing sub-doc
+      Object.assign(course.lectures[courseLectureIndex], lectureData);
+      course.markModified('lectures');
     } else {
       course.lectures.push(lectureData);
     }
     await course.save();
 
-    // E. Update Lecturer Model
+    // E. Update Lecturer Model (Update existing or push new)
     let lecturer = await Lecturer.findOne({ userId });
     if (!lecturer) {
-      lecturer = new Lecturer({ userId, lectures: [] });
-    }
-    const lecturerLectureIndex = lecturer.lectures.findIndex(l => l.lectureId === lectureId);
-    if (lecturerLectureIndex > -1) {
-      lecturer.lectures[lecturerLectureIndex].videoUrl = videoUrl;
+      lecturer = new Lecturer({ userId, lectures: [lectureData] });
     } else {
-      lecturer.lectures.push(lectureData);
+      const lecturerLectureIndex = lecturer.lectures.findIndex(l => l.lectureId === lectureId);
+      if (lecturerLectureIndex > -1) {
+        Object.assign(lecturer.lectures[lecturerLectureIndex], lectureData);
+        lecturer.markModified('lectures');
+      } else {
+        lecturer.lectures.push(lectureData);
+      }
     }
     await lecturer.save();
 
     res.status(200).json({
       success: true,
-      message: 'Video upload and metadata synchronization completed',
-      data: { lectureId, videoUrl, segments },
+      message: 'Upload completed and database updated',
+      data: { lectureId, segments },
     });
-  } catch (error) {
-    console.error('Error completing upload:', error);
-    res.status(500).json({ error: 'Failed to save video metadata across models' });
+
+  } catch (error: any) {
+    console.error('❌ Error completing upload:', error);
+    // Send the actual error message back to help debug
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 });
 

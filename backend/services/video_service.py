@@ -118,7 +118,7 @@ def segment_video_topics(video_id):
             except Exception as e:
                 print(f"❌ JSON Parse Error: {e}")
         
-        return {"segments": [], "full_data": None}
+        return {"segments": [], "full_data": {}}
 
     except Exception as e:
         print(f"❌ API Error: {e}")
@@ -127,15 +127,12 @@ def segment_video_topics(video_id):
     
 def index_and_segment(video_url):
     task_id = start_video_indexing(video_url)
-    if not task_id: return []
+    if not task_id: return {"segments": [], "full_data": None}
     
     video_id = wait_for_task_completion(task_id)
-    if not video_id: return []
+    if not video_id: return {"segments": [], "full_data": None}
     
-    # CRITICAL: Pegasus needs a moment even after the task is "ready"
-    print("[TwelveLabs] Task is 'ready'. Waiting 30s for Pegasus engine to finalize...")
-    time.sleep(30)
-    
+    # This calls the function that returns the DICT
     return segment_video_topics(video_id)
 
 def verify_index_configuration():

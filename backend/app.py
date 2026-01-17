@@ -385,16 +385,35 @@ Task: {task}
             body = request.get_json(force=True) or {}
             video_url = body.get("videoUrl")
             lecture_id = body.get("lectureId")
+            
             if not video_url:
                 return jsonify({"error": "videoUrl is required"}), 400
+                
             print(f"[Flask] /api/segment-video lectureId={lecture_id} started")
-            segments = index_and_segment(video_url)
-            print(f"[Flask] /api/segment-video lectureId={lecture_id} finished -> {len(segments)} segments")
-            for i, s in enumerate(segments[:5]):
+            
+            # 1. This now returns {"segments": [...], "full_data": {...}}
+            result = index_and_segment(video_url)
+            
+            # 2. Extract the list for logging and the old return format
+            segments_list = result.get("segments", [])
+            full_data = result.get("full_data")
+
+            print(f"[Flask] /api/segment-video lectureId={lecture_id} finished -> {len(segments_list)} segments")
+            
+            # 3. Use the list for the loop
+            for i, s in enumerate(segments_list[:5]):
                 print(f"[Flask][{i}] {s.get('start')} - {s.get('end')} :: {s.get('title')}")
-            return jsonify({"lectureId": lecture_id, "segments": segments}), 200
+
+            # 4. Return everything back to Express
+            return jsonify({
+                "lectureId": lecture_id, 
+                "segments": segments_list,
+                "full_data": full_data
+            }), 200
+
         except Exception as e:
             print(f"[Flask] segmentation error: {e}")
+            traceback.print_exc() # This will show you the exact line number of the crash
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/task-status", methods=["GET"])
