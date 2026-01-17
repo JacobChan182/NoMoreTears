@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { s3Client, BUCKET_NAME, generateVideoKey, getVideoUrl } from '../utils/r2';
 import { Lecturer } from '../models/Lecturer';
@@ -71,6 +71,15 @@ router.post('/complete', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // This gives Twelve Labs permission to read the file from your private R2 bucket
+    const downloadCommand = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: videoKey,
+    });
+    
+    const signedDownloadUrl = await getSignedUrl(s3Client, downloadCommand, { expiresIn: 3600 });
+    console.log('Generated Signed URL for Twelve Labs:', signedDownloadUrl);
+
     // Get or create lecturer
     let lecturer = await Lecturer.findOne({ userId });
 
@@ -86,7 +95,7 @@ router.post('/complete', async (req: Request, res: Response) => {
 
     try {
       await axios.post('http://127.0.0.1:5000/api/index-video', {
-        videoUrl: videoUrl,
+        videoUrl: signedDownloadUrl,
         lectureId: lectureId
       });
       console.log('Successfully notified Flask to start indexing.');

@@ -36,24 +36,31 @@ def create_app():
         
     @app.route('/api/index-video', methods=['POST'])
     def handle_index_request():
-        data = request.json
-        video_url = data.get('videoUrl')
-        lecture_id = data.get('lectureId')
+        try:
+            data = request.json
+            print(f"DEBUG: Received data: {data}") # See what Express sent
+            
+            video_url = data.get('videoUrl')
+            lecture_id = data.get('lectureId')
 
-        if not video_url:
-            return jsonify({"error": "No video URL provided"}), 400
+            if not video_url:
+                return jsonify({"error": "No video URL provided"}), 400
 
-        # Trigger the Twelve Labs indexing process
-        task_id = start_video_indexing(video_url)
+            # Trigger the Twelve Labs indexing process
+            task_id = start_video_indexing(video_url)
+            
+            if task_id:
+                return jsonify({
+                    "success": True, 
+                    "message": "Indexing task created", 
+                    "task_id": task_id
+                }), 202
+            else:
+                return jsonify({"error": "Failed to start indexing"}), 500
         
-        if task_id:
-            return jsonify({
-                "success": True, 
-                "message": "Indexing task created", 
-                "task_id": task_id
-            }), 202
-        else:
-            return jsonify({"error": "Failed to start indexing"}), 500
+        except Exception as e:
+            print(f"CRITICAL ROUTE ERROR: {e}") # This will show in your terminal
+            return jsonify({"error": str(e)}), 500
 
     return app
 
