@@ -25,8 +25,6 @@ def create_app():
         db = mongo_client["no-more-tears"] 
         print("✅ MongoDB connected successfully")
 
-    TL_API_KEY = os.getenv("TL_API_KEY")
-    if not TL_API_KEY:
     # Initialize Twelve Labs client
     TWELVELABS_API_KEY = os.getenv("TWELVELABS_API_KEY")
     if not TWELVELABS_API_KEY:
