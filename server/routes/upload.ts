@@ -125,6 +125,25 @@ router.post('/complete', async (req: Request, res: Response) => {
     }
 
     const videoUrl = getVideoUrl(videoKey);
+
+    let fullAiData: any = null; // To store the raw JSON object
+
+    const flaskLong = axios.create({ baseURL: FLASK_BASE_URL, timeout: 300000 });
+    try {
+      const segResp = await flaskLong.post('/api/segment-video', { 
+        videoUrl: signedDownloadUrl, 
+        lectureId 
+      });
+      
+      // Destructure the new response format from Python
+      segments = segResp.data?.segments || [];
+      fullAiData = segResp.data?.full_data || null;
+      
+      console.log(`[Node] Received ${segments.length} segments and raw metadata.`);
+    } catch (segErr: any) {
+      console.warn('Segmentation failed', segErr.message);
+    }
+
     const lectureData = {
       lectureId,
       lectureTitle: lectureTitle || 'Untitled Lecture',
@@ -132,8 +151,8 @@ router.post('/complete', async (req: Request, res: Response) => {
       videoUrl,
       createdAt: new Date(),
       studentRewindEvents: [],
-      // NEW: persist segments if available (may be empty if segmentation skipped/failed)
-      lectureSegments: segments
+      lectureSegments: segments,
+      rawAiMetadata: fullAiData
     };
 
     // D. Update Course Model

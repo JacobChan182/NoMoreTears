@@ -82,7 +82,7 @@ def segment_video_topics(video_id):
         # New syntax for 2026 SDK: client.analyze instead of client.generate.text
         # We use a structured prompt to get JSON back
         prompt = (
-            "Analyze this video and provide a list of major topics. Include the topic name, a summary/details of each topic, as well as the start and end time of the video where this topic is covered in seconds."
+            "Analyze this video and provide a list of major topics. Include the topic name, a summary/details of each topic, \n as well as the start and end time of the video where this topic is covered in seconds."
             "Return the response strictly as a JSON object with this structure: "
             '{"segments": [{"start": 0, "end": 60, "title": "Topic Name", "summary": "..."}]}'
         )
@@ -102,7 +102,7 @@ def segment_video_topics(video_id):
             print("❌ Error: API returned no data. Check your model options.")
             return []
 
-        print(f"[TwelveLabs] Raw Data Received: {raw_text[:100]}...")
+        print(f"[TwelveLabs] Raw Data Received: {raw_text}...")
 
         # Robust JSON extraction
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
@@ -110,12 +110,15 @@ def segment_video_topics(video_id):
             try:
                 data = json.loads(json_match.group(1))
                 segments = data.get("segments", [])
-                print(f"✅ Success: Parsed {len(segments)} segments.")
-                return segments
+                # We return a dictionary containing both the list and the raw object
+                return {
+                    "segments": segments, 
+                    "full_data": data 
+                }
             except Exception as e:
                 print(f"❌ JSON Parse Error: {e}")
         
-        return []
+        return {"segments": [], "full_data": None}
 
     except Exception as e:
         print(f"❌ API Error: {e}")
