@@ -8,6 +8,34 @@ import { Course } from '../models/Course';
 
 const router = express.Router();
 
+// Resolve Flask base URL with fallbacks
+const FLASK_BASE_URL =
+  process.env.FLASK_BASE_URL ||
+  process.env.DOCKER_FLASK_SERVICE || // e.g., http://flask:5000 from docker-compose
+  'http://127.0.0.1:5000';
+
+console.log(`[Node] Using Flask base URL: ${FLASK_BASE_URL}`);
+
+// Use a base axios instance for general calls...
+const flask = axios.create({ baseURL: FLASK_BASE_URL, timeout: 15000 });
+
+async function tryFlask<T>(fn: () => Promise<T>, label: string, retries = 2, delayMs = 1000): Promise<T | null> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const code = err?.code || '';
+      const msg = err?.response?.data || err?.message || err;
+      console.error(`${label} attempt ${i + 1} failed:`, msg);
+      if (code === 'ECONNREFUSED' || code === 'ENOTFOUND') {
+        console.error(`Cannot reach Flask at ${FLASK_BASE_URL}. Check FLASK_BASE_URL and that Flask is running.`);
+      }
+      if (i < retries) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return null;
+}
+
 // 1. Generate presigned URL for video upload
 router.post('/presigned-url', async (req: Request, res: Response) => {
   try {
@@ -72,15 +100,28 @@ router.post('/complete', async (req: Request, res: Response) => {
     const downloadCommand = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: videoKey });
     const signedDownloadUrl = await getSignedUrl(s3Client, downloadCommand, { expiresIn: 3600 });
 
-    // C. Trigger Flask Indexing
-    try {
-      await axios.post('http://127.0.0.1:5000/api/index-video', {
-        videoUrl: signedDownloadUrl,
-        lectureId: lectureId
-      });
-      console.log('Twelve Labs indexing triggered via Flask.');
-    } catch (flaskError: any) {
-      console.error('Indexing trigger failed:', flaskError.message);
+    // Initialize segments early to avoid ReferenceError
+    let segments: Array<{ start: number; end: number; title: string; summary?: string }> = [];
+
+    // Health check with retry
+    const health = await tryFlask(() => flask.get('/health'), 'Flask health check');
+    if (health) {
+      // Trigger indexing and capture taskId
+      const indexResp = await tryFlask(() => flask.post('/api/index-video', { videoUrl: signedDownloadUrl, lectureId }), 'Indexing trigger');
+      const taskId = (indexResp as any)?.data?.task_id;
+      if (taskId) console.log(`[Node] TwelveLabs taskId=${taskId} (use /api/task-status?taskId=... on Flask to check progress)`);
+
+      // Fire segmentation (may take minutes); don’t block overall success
+      const flaskLong = axios.create({ baseURL: FLASK_BASE_URL, timeout: 300000 });
+      try {
+        const segResp = await flaskLong.post('/api/segment-video', { videoUrl: signedDownloadUrl, lectureId });
+        segments = segResp.data?.segments || [];
+        console.log(`[Node] lectureId=${lectureId} segments=${segments.length}`);
+      } catch (segErr: any) {
+        console.warn('Segmentation still running or timed out; results will not block upload.', segErr?.message || segErr);
+      }
+    } else {
+      console.error('Skipping Twelve Labs calls due to unreachable Flask.');
     }
 
     const videoUrl = getVideoUrl(videoKey);
@@ -91,6 +132,8 @@ router.post('/complete', async (req: Request, res: Response) => {
       videoUrl,
       createdAt: new Date(),
       studentRewindEvents: [],
+      // NEW: persist segments if available (may be empty if segmentation skipped/failed)
+      lectureSegments: segments
     };
 
     // D. Update Course Model
@@ -118,7 +161,7 @@ router.post('/complete', async (req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       message: 'Video upload and metadata synchronization completed',
-      data: { lectureId, videoUrl },
+      data: { lectureId, videoUrl, segments },
     });
   } catch (error) {
     console.error('Error completing upload:', error);
