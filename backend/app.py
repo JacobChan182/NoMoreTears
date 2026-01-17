@@ -1,27 +1,12 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from twelvelabs import TwelveLabs
 import os
 from dotenv import load_dotenv
 from backboard import BackboardClient
-import asyncio
 
 # Load environment variables from .env file
 load_dotenv()
-
-@app.route('/api/backboard/chat', methods=['POST'])
-def backboard_chat():
-    data = request.json
-    api_key = os.getenv("BACKBOARD_API_KEY")
-    if not api_key:
-        return {"status": "error", "message": "Missing BACKBOARD_API_KEY env var"}, 500
-    
-    client = BackboardClient(api_key=api_key)
-
-    assistant = client.create_assistant(
-        name="NoMoreTears Assistant",
-        system_message="You are a helpful assistant for the NoMoreTears application."
-    )
 
 def create_app():
     app = Flask(__name__)
@@ -33,14 +18,40 @@ def create_app():
         raise RuntimeError("Missing TWELVE_LABS_API_KEY env var")
     tl = TwelveLabs(api_key=TL_API_KEY)
 
+    @app.post('/api/backboard/chat')
+    async def backboard_chat():
+        data = request.get_json(force=True)
+        api_key = os.getenv("BACKBOARD_API_KEY")
+        if not api_key:
+            return {"status": "error", "message": "Missing BACKBOARD_API_KEY env var"}, 500
+
+        client = BackboardClient(api_key=api_key)
+
+        # Create assistant and thread, then send the message
+        assistant = await client.create_assistant(
+            name="NoMoreTears Assistant",
+            system_prompt="A helpful educational assistant"
+        )
+        thread = await client.create_thread(assistant.assistant_id)
+
+        response = await client.add_message(
+            thread_id=thread.thread_id,
+            content=data.get("message", ""),
+            llm_provider="openai",
+            model_name="gpt-4o",
+            stream=False
+        )
+
+        return jsonify({"response": response.content})
+
     @app.get("/health")
     def health():
         return {"status": "ok", "server": "Flask"}, 200
-    
+
     @app.route('/api/hello', methods=['GET'])  # match Vite proxy prefix
     def test():
         return {"status": "success"}
-    
+
     @app.route('/api/test-connection', methods=['GET'])
     def test_connection():
         try:
