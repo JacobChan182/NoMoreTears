@@ -6,13 +6,16 @@ import { sendChatMessage } from '@/lib/api';
 import { getInstructorLectures, createCourse, updateCourse, getCourseStudents, addStudentsToCourse, removeStudentFromCourse, getLectureWatchProgress, getLectureSegmentRewinds } from '@/lib/api';
 import { Lecture } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { 
+import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Legend
 } from 'recharts';
-import { 
-  Zap, LogOut, Users, TrendingUp, AlertTriangle, BookOpen, 
+import {
+  Zap, LogOut, Users, TrendingUp, AlertTriangle, BookOpen,
+
   BarChart2, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, ChevronRight, Play
+
+
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,7 +77,9 @@ const InstructorDashboard = () => {
   const [studentEmails, setStudentEmails] = useState('');
   const [courses, setCourses] = useState(mockCourses);
   const [isLoadingLectures, setIsLoadingLectures] = useState(true);
-  
+  const [misunderstoodConcepts, setMisunderstoodConcepts] = useState<{ question: string, incorrectCount: number }[]>([]);
+
+
   // Course settings state
   const [courseSettingsName, setCourseSettingsName] = useState('');
   const [courseSettingsCode, setCourseSettingsCode] = useState('');
@@ -125,11 +130,11 @@ const InstructorDashboard = () => {
       try {
         setIsLoadingLectures(true);
         const response = await getInstructorLectures(user.id);
-        
+
         if (response.success && response.data) {
           const { lectures: transformedLectures, courses: apiCourses } = transformInstructorLectures(response);
           const enrichedLectures = enrichLecturesWithMockData(transformedLectures);
-          
+
           // Update courses from API
           if (apiCourses && apiCourses.length > 0) {
             const updatedCourses = (apiCourses as ApiInstructorCourse[]).map((apiCourse) => ({
@@ -140,17 +145,17 @@ const InstructorDashboard = () => {
               lectureIds: apiCourse.lectures?.map((l) => l.lectureId) || [],
             }));
             setCourses(updatedCourses);
-            
+
             // Set first course as selected if no course is selected
             if (!selectedCourseId && updatedCourses.length > 0) {
               setSelectedCourseId(updatedCourses[0].id);
             }
           }
-          
+
           if (enrichedLectures.length > 0) {
             setLectures(enrichedLectures);
             // Select first lecture of the selected course, or first lecture overall
-            const courseLectures = selectedCourseId 
+            const courseLectures = selectedCourseId
               ? enrichedLectures.filter(l => l.courseId === selectedCourseId)
               : enrichedLectures;
             if (courseLectures.length > 0) {
@@ -229,6 +234,7 @@ const InstructorDashboard = () => {
   // Fetch segment rewind counts when selected lecture changes
   useEffect(() => {
     let isMounted = true;
+    let intervalId: number | undefined;
 
     const fetchSegmentRewinds = async () => {
       if (!selectedLecture) {
@@ -253,7 +259,7 @@ const InstructorDashboard = () => {
 
     fetchSegmentRewinds();
 
-    const intervalId = window.setInterval(fetchSegmentRewinds, 10000);
+    intervalId = window.setInterval(fetchSegmentRewinds, 10000);
 
     const handleFocus = () => {
       fetchSegmentRewinds();
@@ -262,7 +268,7 @@ const InstructorDashboard = () => {
 
     return () => {
       isMounted = false;
-      window.clearInterval(intervalId);
+      if (intervalId) window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
   }, [selectedLecture]);
@@ -271,12 +277,12 @@ const InstructorDashboard = () => {
   const clusterInsights = useMemo(() => calculateClusterInsights(), []);
 
   // Get course from selectedCourseId or from selectedLecture
-  const course = selectedCourseId 
+  const course = selectedCourseId
     ? courses.find(c => c.id === selectedCourseId)
-    : selectedLecture 
+    : selectedLecture
       ? courses.find(c => c.id === selectedLecture.courseId)
-      : courses.length > 0 
-        ? courses[0] 
+      : courses.length > 0
+        ? courses[0]
         : null;
 
   const handleSwitchCourse = (courseId: string) => {
@@ -320,18 +326,18 @@ const InstructorDashboard = () => {
 
   const handleOpenCourseSettings = async () => {
     setIsCourseActionDialogOpen(false);
-    
+
     // Reset state
     setNewStudentEmail('');
-    
+
     setIsCourseSettingsOpen(true);
-    
+
     if (clickedCourseId) {
       const selectedCourse = courses.find(c => c.id === clickedCourseId);
       if (selectedCourse) {
         setCourseSettingsName(selectedCourse.name);
         setCourseSettingsCode(selectedCourse.code);
-        
+
         // Fetch enrolled students
         try {
           setIsLoadingStudents(true);
@@ -378,10 +384,10 @@ const InstructorDashboard = () => {
         if (studentsResponse.success && studentsResponse.data) {
           setCourseStudents(studentsResponse.data);
         }
-        
+
         // Clear input
         setNewStudentEmail('');
-        
+
         toast({
           title: 'Success',
           description: `Student ${email} has been added to the course`,
@@ -406,7 +412,7 @@ const InstructorDashboard = () => {
       if (response.success) {
         // Remove from local state
         setCourseStudents(courseStudents.filter(s => s.userId !== userId));
-        
+
         toast({
           title: 'Success',
           description: `Student ${email} has been removed from the course`,
@@ -449,17 +455,17 @@ const InstructorDashboard = () => {
           return c;
         });
         setCourses(updatedCourses);
-        
+
         // Update selected course if it was the one we edited
         if (selectedCourseId === clickedCourseId && newCourseId) {
           setSelectedCourseId(newCourseId);
         }
-        
+
         toast({
           title: 'Success',
           description: 'Course settings have been updated',
         });
-        
+
         setIsCourseSettingsOpen(false);
       }
     } catch (error: unknown) {
@@ -488,12 +494,12 @@ const InstructorDashboard = () => {
 
       // Create course in database
       const response = await createCourse(newCourseCode.trim(), newCourseName.trim(), user.id, emailList);
-      
+
       // Show assignment results
       if (emailList.length > 0) {
         const assignedCount = response.assignedStudents?.length || 0;
         const notFoundCount = response.notFoundEmails?.length || 0;
-        
+
         if (assignedCount > 0 && notFoundCount === 0) {
           toast({
             title: "Course created successfully",
@@ -518,7 +524,7 @@ const InstructorDashboard = () => {
           description: "You can assign students later.",
         });
       }
-      
+
       // Update local state
       const newCourse = {
         id: newCourseCode.trim(),
@@ -556,16 +562,16 @@ const InstructorDashboard = () => {
   // Prepare chart data
   const struggleChartData = selectedLecture
     ? conceptInsights
-        .filter(c => selectedLecture.concepts.find(lc => lc.id === c.conceptId))
-        .map(insight => ({
-      name: insight.conceptName.length > 15 
-        ? insight.conceptName.substring(0, 15) + '...' 
-        : insight.conceptName,
-          fullName: insight.conceptName,
-          replays: insight.replayCount,
-          dropOffs: insight.dropOffCount,
-          struggleScore: Math.round(insight.struggleScore),
-        }))
+      .filter(c => selectedLecture.concepts.find(lc => lc.id === c.conceptId))
+      .map(insight => ({
+        name: insight.conceptName.length > 15
+          ? insight.conceptName.substring(0, 15) + '...'
+          : insight.conceptName,
+        fullName: insight.conceptName,
+        replays: insight.replayCount,
+        dropOffs: insight.dropOffCount,
+        struggleScore: Math.round(insight.struggleScore),
+      }))
     : [];
 
   const clusterChartData = clusterInsights.map(cluster => ({
@@ -583,21 +589,21 @@ const InstructorDashboard = () => {
   // Use real watch progress data if available, otherwise fall back to mock data
   const timelineData = watchProgressData?.retentionData && watchProgressData.retentionData.length > 0
     ? watchProgressData.retentionData.map((data) => ({
-        name: `${Math.floor(data.time / 60)}:${String(Math.floor(data.time % 60)).padStart(2, '0')}`,
-        time: `${Math.floor(data.time / 60)}:${String(Math.floor(data.time % 60)).padStart(2, '0')}`,
-        viewers: data.retention,
-        replays: 0, // Replays not tracked in watch progress yet
-      }))
+      name: `${Math.floor(data.time / 60)}:${String(Math.floor(data.time % 60)).padStart(2, '0')}`,
+      time: `${Math.floor(data.time / 60)}:${String(Math.floor(data.time % 60)).padStart(2, '0')}`,
+      viewers: data.retention,
+      replays: 0, // Replays not tracked in watch progress yet
+    }))
     : selectedLecture
       ? selectedLecture.concepts.map(concept => {
-          const insight = conceptInsights.find(i => i.conceptId === concept.id);
-          return {
-            name: concept.name.substring(0, 10) + '...',
-            time: `${Math.floor(concept.startTime / 60)}:${String(concept.startTime % 60).padStart(2, '0')}`,
-            viewers: 100 - (insight?.dropOffCount || 0) * 2,
-            replays: insight?.replayCount || 0,
-          };
-        })
+        const insight = conceptInsights.find(i => i.conceptId === concept.id);
+        return {
+          name: concept.name.substring(0, 10) + '...',
+          time: `${Math.floor(concept.startTime / 60)}:${String(concept.startTime % 60).padStart(2, '0')}`,
+          viewers: 100 - (insight?.dropOffCount || 0) * 2,
+          replays: insight?.replayCount || 0,
+        };
+      })
       : [];
 
   interface AiFrictionSegment {
@@ -722,12 +728,12 @@ const InstructorDashboard = () => {
             <div className="w-8 h-8 rounded-lg gradient-bg flex items-center justify-center">
               <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-semibold">Hi<span className="gradient-text">Ready</span></span>
+            <span className="font-semibold">Edu<span className="gradient-text">Pulse</span></span>
             <Badge variant="outline" className="ml-2 bg-instructor/10 text-instructor border-instructor/30">
               Instructor View
             </Badge>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted">
               <Shield className="w-4 h-4 text-muted-foreground" />
@@ -824,7 +830,7 @@ const InstructorDashboard = () => {
                         ))}
                     </div>
                     <div className="shrink-0 ml-auto">
-                      <UploadVideo 
+                      <UploadVideo
                         courseId={course.id}
                         onUploadComplete={(lectureId, videoUrl) => {
                           console.log('Upload complete:', lectureId, videoUrl);
@@ -866,259 +872,239 @@ const InstructorDashboard = () => {
               <>
                 {/* Stats Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {[
-            { icon: Users, label: 'Total Employees', value: mockStudents.length, color: 'text-primary' },
-            { icon: Eye, label: 'Avg. Watch Rate', value: '78%', color: 'text-chart-3' },
-            { icon: AlertTriangle, label: 'Friction Points', value: aiFrictionSegments.length, color: 'text-destructive' },
-            { icon: Activity, label: 'Engagement Score', value: '82/100', color: 'text-chart-2' },
-          ].map((stat, i) => (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-            >
-              <Card className="glass-card">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
-                    <stat.icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{stat.label}</p>
-                    <p className="text-2xl font-bold">{stat.value}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
+                  {[
+                    { icon: Users, label: 'Total Employees', value: mockStudents.length, color: 'text-primary' },
+                    { icon: Eye, label: 'Avg. Watch Rate', value: '78%', color: 'text-chart-3' },
+                    { icon: AlertTriangle, label: 'Friction Points', value: aiFrictionSegments.length, color: 'text-destructive' },
+                    { icon: Activity, label: 'Engagement Score', value: '82/100', color: 'text-chart-2' },
+                  ].map((stat, i) => (
+                    <motion.div
+                      key={stat.label}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                    >
+                      <Card className="glass-card">
+                        <CardContent className="p-4 flex items-center gap-4">
+                          <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
+                            <stat.icon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">{stat.label}</p>
+                            <p className="text-2xl font-bold">{stat.value}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </div>
 
-        {/* Instructor Video Preview */}
-        <div className="grid lg:grid-cols-3 gap-6 mb-6">
-          <div className="lg:col-span-2">
-            {selectedLecture?.videoUrl && selectedLecture.courseId === course?.id ? (
-              <VideoPlayer lecture={selectedLecture} course={course} disableTracking showDebug />
-            ) : (
-              <Card className="glass-card overflow-hidden">
-                <div className="flex flex-col items-center justify-center h-full min-h-[320px] bg-muted/30">
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="text-center text-muted-foreground">
-                      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
-                        <Play className="w-8 h-8" />
-                      </div>
-                      <p className="font-medium">No video uploaded</p>
-                      <p className="text-sm">Select a lecture with a video to preview.</p>
-                    </div>
+                {/* Instructor Video Preview */}
+                <div className="grid lg:grid-cols-3 gap-6 mb-6">
+                  <div className="lg:col-span-2">
+                    <VideoPlayer lecture={selectedLecture} course={course} disableTracking />
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-destructive" />
+                          Friction Points Ranking
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {displayedStrugglingConcepts.map((concept, i) => (
+                          <motion.div
+                            key={concept.segmentId}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.1 }}
+                            className="p-4 rounded-lg bg-muted/50"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium text-sm">#{i + 1} {concept.name}</span>
+                              <Badge
+                                variant={concept.frictionScore > 60 ? 'destructive' : 'secondary'}
+                              >
+                                {Math.round(concept.frictionScore)}% friction
+                              </Badge>
+                            </div>
+                            {concept.reason && (
+                              <div className="text-xs text-muted-foreground mb-1">{concept.reason}</div>
+                            )}
+                          </motion.div>
+                        ))}
+                        {displayedStrugglingConcepts.length === 0 && !isFrictionLoading && (
+                          <div className="text-sm text-muted-foreground text-center py-6">
+                            No friction data available yet.
+                          </div>
+                        )}
+                        {aiFrictionSegments.length > 3 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setShowAllFrictionPoints((prev) => !prev)}
+                          >
+                            {showAllFrictionPoints ? 'Show top 3' : `Show all ${aiFrictionSegments.length}`}
+                          </Button>
+                        )}
+                      </CardContent>
+                      {isFrictionLoading && (
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          background: 'rgba(200,200,200,0.5)',
+                          zIndex: 10,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 'inherit',
+                        }}>
+                          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                    </Card>
                   </div>
                 </div>
-              </Card>
-            )}
-          </div>
-          <div style={{ position: 'relative' }}>
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-destructive" />
-                  Friction Points Ranking
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {displayedStrugglingConcepts.map((concept, i) => (
-                  <motion.div
-                    key={concept.segmentId}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="p-4 rounded-lg bg-muted/50"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-sm">#{i + 1} {concept.name}</span>
-                      <Badge 
-                        variant={concept.frictionScore > 60 ? 'destructive' : 'secondary'}
-                      >
-                        {Math.round(concept.frictionScore)}% friction
-                      </Badge>
+
+                {/* Main Analytics */}
+                <Tabs defaultValue="concepts" className="space-y-6">
+                  <TabsList className="glass-card p-1">
+                    <TabsTrigger value="concepts" className="flex items-center gap-2">
+                      <BarChart2 className="w-4 h-4" />
+                      Concept Analysis
+                    </TabsTrigger>
+                    <TabsTrigger value="timeline" className="flex items-center gap-2">
+                      <Activity className="w-4 h-4" />
+                      Timeline View
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* Concept Analysis Tab */}
+                  <TabsContent value="concepts" className="space-y-6">
+                    <div className="grid lg:grid-cols-2 gap-6">
+                      {(() => {
+                        const chartSegments =
+                          (segmentRewindData?.segments && segmentRewindData.segments.length > 0)
+                            ? segmentRewindData.segments
+                            : (selectedLecture?.lectureSegments || []);
+
+                        if (chartSegments.length === 0) {
+                          return null;
+                        }
+
+                        return (
+                          <Card className="glass-card lg:col-span-2">
+                            <CardHeader>
+                              <CardTitle className="flex items-center gap-2">
+                                <BarChart2 className="w-5 h-5 text-primary" />
+                                Segment Rewind Count
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <ResponsiveContainer width="100%" height={420}>
+                                <BarChart data={chartSegments.map((seg, index) => {
+                                  const count = seg.count ?? 0;
+                                  return {
+                                    name: seg.title.length > 20 ? seg.title.substring(0, 20) + '...' : seg.title,
+                                    fullName: seg.title,
+                                    rewinds: count,
+                                    index,
+                                    time: `${Math.floor(seg.start / 60)}:${String(Math.floor(seg.start % 60)).padStart(2, '0')}`,
+                                  };
+                                })}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                  <XAxis
+                                    dataKey="name"
+                                    stroke="hsl(var(--muted-foreground))"
+                                    tick={{ fontSize: 11 }}
+                                    angle={-45}
+                                    textAnchor="end"
+                                    height={100}
+                                  />
+                                  <YAxis
+                                    stroke="hsl(var(--muted-foreground))"
+                                    domain={[0, 'dataMax + 1']}
+                                    allowDecimals={false}
+                                    tickCount={6}
+                                  />
+                                  <Tooltip
+                                    contentStyle={{
+                                      backgroundColor: 'hsl(var(--card))',
+                                      border: '1px solid hsl(var(--border))',
+                                      borderRadius: '8px',
+                                    }}
+                                    formatter={(value: unknown, _name: unknown, props: unknown) => {
+                                      const count = typeof value === 'number' ? value : Number(value);
+                                      const payload = (props as { payload?: { index?: number; fullName?: string } })?.payload;
+                                      const segmentIndex = payload?.index ?? 0;
+                                      const fullName = payload?.fullName ?? '';
+                                      return [
+                                        `${Number.isFinite(count) ? count : value} rewind${count !== 1 ? 's' : ''}`,
+                                        `Segment ${segmentIndex + 1}: ${fullName}`,
+                                      ];
+                                    }}
+                                  />
+                                  <Bar dataKey="rewinds" fill={CHART_COLORS[2]} name="Rewinds" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </CardContent>
+                          </Card>
+                        );
+                      })()}
                     </div>
-                    {concept.reason && (
-                      <div className="text-xs text-muted-foreground mb-1">{concept.reason}</div>
-                    )}
-                  </motion.div>
-                ))}
-                {displayedStrugglingConcepts.length === 0 && !isFrictionLoading && (
-                  <div className="text-sm text-muted-foreground text-center py-6">
-                    No friction data available yet.
-                  </div>
-                )}
-                {aiFrictionSegments.length > 3 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setShowAllFrictionPoints((prev) => !prev)}
-                  >
-                    {showAllFrictionPoints ? 'Show top 3' : `Show all ${aiFrictionSegments.length}`}
-                  </Button>
-                )}
-              </CardContent>
-              {isFrictionLoading && (
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  background: 'rgba(200,200,200,0.5)',
-                  zIndex: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 'inherit',
-                }}>
-                  <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              )}
-            </Card>
-          </div>
-        </div>
+                  </TabsContent>
 
-        {/* Main Analytics */}
-        <Tabs defaultValue="concepts" className="space-y-6">
-          <TabsList className="glass-card p-1">
-            <TabsTrigger value="concepts" className="flex items-center gap-2">
-              <BarChart2 className="w-4 h-4" />
-              Concept Analysis
-            </TabsTrigger>
-            <TabsTrigger value="timeline" className="flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              Timeline View
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Concept Analysis Tab */}
-          <TabsContent value="concepts" className="space-y-6">
-            <div className="grid lg:grid-cols-2 gap-6">
-              {(() => {
-                const baseSegments = selectedLecture?.lectureSegments || [];
-                const chartSegments =
-                  (segmentRewindData?.segments && segmentRewindData.segments.length > 0)
-                    ? segmentRewindData.segments
-                    : baseSegments.map(seg => ({
-                        ...seg,
-                        count: 0,
-                      }));
-
-                if (chartSegments.length === 0) {
-                  return null;
-                }
-
-                return (
-                  <Card className="glass-card lg:col-span-2">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart2 className="w-5 h-5 text-primary" />
-                        Segment Watch Count
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ResponsiveContainer width="100%" height={420}>
-                        <BarChart data={chartSegments.map((seg, index) => {
-                          const count = seg.count ?? 0;
-                          return {
-                            name: seg.title.length > 20 ? seg.title.substring(0, 20) + '...' : seg.title,
-                            fullName: seg.title,
-                            rewinds: count,
-                            index,
-                            time: `${Math.floor(seg.start / 60)}:${String(Math.floor(seg.start % 60)).padStart(2, '0')}`,
-                          };
-                        })}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis 
-                            dataKey="name" 
-                            stroke="hsl(var(--muted-foreground))" 
-                            tick={{ fontSize: 11 }}
-                            angle={-45}
-                            textAnchor="end"
-                            height={100}
-                          />
-                          <YAxis
-                            stroke="hsl(var(--muted-foreground))"
-                            domain={[0, 'dataMax + 1']}
-                            allowDecimals={false}
-                            tickCount={6}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: 'hsl(var(--card))',
-                              border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px',
-                            }}
-                            formatter={(value: unknown, _name: unknown, props: unknown) => {
-                              const count = typeof value === 'number' ? value : Number(value);
-                              const payload = (props as { payload?: { index?: number; fullName?: string } })?.payload;
-                              const segmentIndex = payload?.index ?? 0;
-                              const fullName = payload?.fullName ?? '';
-                              return [
-                                `${Number.isFinite(count) ? count : value} view${count !== 1 ? 's' : ''}`,
-                                `Segment ${segmentIndex + 1}: ${fullName}`,
-                              ];
-                            }}
-                          />
-                          <Bar dataKey="rewinds" fill={CHART_COLORS[2]} name="Rewinds" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
-                );
-              })()}
-            </div>
-          </TabsContent>
-
-          {/* Timeline Tab */}
-          <TabsContent value="timeline">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-primary" />
-                  Viewer Retention Timeline - {selectedLecture.title}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={350}>
-                  <AreaChart data={timelineData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" />
-                    <YAxis stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                      }}
-                    />
-                    <Legend />
-                    <Area 
-                      type="monotone" 
-                      dataKey="viewers" 
-                      stroke={CHART_COLORS[0]} 
-                      fill={CHART_COLORS[0]}
-                      fillOpacity={0.3}
-                      name="Viewers (%)"
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="replays" 
-                      stroke={CHART_COLORS[1]} 
-                      fill={CHART_COLORS[1]}
-                      fillOpacity={0.3}
-                      name="Replays"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                  {/* Timeline Tab */}
+                  <TabsContent value="timeline">
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Activity className="w-5 h-5 text-primary" />
+                          Viewer Retention Timeline - {selectedLecture.title}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={350}>
+                          <AreaChart data={timelineData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" />
+                            <YAxis stroke="hsl(var(--muted-foreground))" />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: 'hsl(var(--card))',
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '8px',
+                              }}
+                            />
+                            <Legend />
+                            <Area
+                              type="monotone"
+                              dataKey="viewers"
+                              stroke={CHART_COLORS[0]}
+                              fill={CHART_COLORS[0]}
+                              fillOpacity={0.3}
+                              name="Viewers (%)"
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="replays"
+                              stroke={CHART_COLORS[1]}
+                              fill={CHART_COLORS[1]}
+                              fillOpacity={0.3}
+                              name="Replays"
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
 
                 {/* Privacy Notice */}
                 <motion.div
@@ -1170,11 +1156,10 @@ const InstructorDashboard = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') handleSwitchCourse(c.id);
                       }}
-                      className={`group w-full p-4 rounded-lg border text-left transition-all ${
-                        c.id === course?.id
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                      }`}
+                      className={`group w-full p-4 rounded-lg border text-left transition-all ${c.id === course?.id
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                        }`}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                     >

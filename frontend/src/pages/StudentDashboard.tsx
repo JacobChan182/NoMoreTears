@@ -424,37 +424,26 @@ const StudentDashboard = () => {
 
   const generateQuiz = async () => {
     if (!selectedLecture) return;
-
-    // Try multiple possible ID fields
+  
     const lectureId = getLectureId(selectedLecture);
-    
     const videoTitle = selectedLecture.lectureTitle || selectedLecture.title;
     
-    console.log("🚀 PAYLOAD CHECK:", {
-      lectureId: lectureId,
-      selectedLecture_lectureId: selectedLecture.lectureId,
-      selectedLecture_id: selectedLecture.id,
-      selectedLecture_mongoId: selectedLecture._id,
-      url: selectedLecture.videoUrl,
-      title: videoTitle,
-      allKeys: Object.keys(selectedLecture) // See all available keys
-    });
-
+    // Extract segments from the selected lecture
+    // Ensure we fallback to an empty array if segments aren't found
+    const segments = selectedLecture.lectureSegments || [];
+  
     if (!lectureId) {
-      console.error("❌ No valid lecture ID found. Full lecture object:", selectedLecture);
       toast({
         title: 'Error',
-        description: 'Lecture ID is missing. Cannot generate quiz. Check console for details.',
+        description: 'Lecture ID is missing.',
         variant: 'destructive',
       });
       return;
     }
-
+  
     setIsGeneratingQuiz(true);
     try {
-      // Use the same BACKEND_URL as other Flask API calls
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:5001/api';
-      const response = await fetch(`${BACKEND_URL}/backboard/generate-content`, {
+      const response = await fetch('http://localhost:5001/api/backboard/generate-content', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -463,36 +452,71 @@ const StudentDashboard = () => {
           lecture_id: lectureId,
           video_id: selectedLecture.videoUrl,
           video_title: videoTitle,
-          content_type: 'quiz'
+          content_type: 'quiz',
+          // ADD THIS: Pass the segments to the backend
+          segments: segments 
         }),
       });
-
+  
       const data = await response.json();
       
       if (data.status === 'success') {
-        console.log("Quiz Generated:", data.content);
         setGeneratedQuiz(data.content);
-        toast({
-          title: 'Success',
-          description: 'Quiz generated successfully!',
-        });
+        toast({ title: 'Success', description: 'Quiz generated per segment!' });
       } else {
-        console.error("Error:", data.message);
-        toast({
-          title: 'Error',
-          description: data.message || 'Failed to generate quiz',
-          variant: 'destructive',
-        });
+        throw new Error(data.message);
       }
     } catch (error) {
       console.error("Network Error:", error);
       toast({
         title: 'Error',
-        description: 'Failed to connect to quiz generation service',
+        description: 'Failed to generate segment-based quiz',
         variant: 'destructive',
       });
     } finally {
       setIsGeneratingQuiz(false);
+    }
+  };
+
+  const handleQuizFinish = async (results) => {
+    const lectureId = getLectureId(selectedLecture);
+    
+    // results now contains: { score, total, percentage, details }
+    console.log("📊 Quiz Finished! Sending detailed results to MongoDB:", results);
+  
+    try {
+      // Using 127.0.0.1:5001 as per your current configuration
+      const response = await fetch('http://127.0.0.1:5001/api/backboard/submit-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          lectureId: lectureId,
+          score: results.score,
+          total: results.total,
+          percentage: results.percentage,
+          // This is the new array containing question strings and isCorrect status
+          details: results.details, 
+          timestamp: new Date().toISOString()
+        }),
+      });
+  
+      if (response.ok) {
+        toast({
+          title: "Progress Saved!",
+          description: `You scored ${results.percentage}% and your detailed breakdown is stored.`,
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save');
+      }
+    } catch (error) {
+      console.error("Failed to save quiz results:", error);
+      toast({
+        title: "Error",
+        description: "Could not save your results to the database.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -505,7 +529,7 @@ const StudentDashboard = () => {
             <div className="w-8 h-8 rounded-lg gradient-bg flex items-center justify-center">
               <Zap className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-semibold">Hi<span className="gradient-text">Ready</span></span>
+            <span className="font-semibold">Edu<span className="gradient-text">Pulse</span></span>
           </div>
           
           <div className="flex items-center gap-4">
@@ -678,7 +702,8 @@ const StudentDashboard = () => {
               {generatedQuiz && (
                 <QuizDisplay 
                   quizContent={generatedQuiz} 
-                  onClose={() => setGeneratedQuiz(null)} 
+                  onClose={() => setGeneratedQuiz(null)}
+                  onFinish={handleQuizFinish} 
                 />
               )}
             </div>
