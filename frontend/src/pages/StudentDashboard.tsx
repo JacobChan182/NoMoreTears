@@ -26,6 +26,8 @@ const StudentDashboard = () => {
   const { trackEvent, trackRewind } = useAnalytics();
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousTimeRef = useRef<number>(0);
+  const isPlayingRef = useRef<boolean>(false);
+  const lastPlayTimeRef = useRef<number>(0);
   const [courses, setCourses] = useState<Course[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -246,8 +248,8 @@ const StudentDashboard = () => {
   // Reset previous time and duration when lecture changes
   useEffect(() => {
     if (selectedLecture) {
-      previousTimeRef.current = 0;
-      setCurrentTime(0);
+    previousTimeRef.current = 0;
+    setCurrentTime(0);
       setVideoDuration(0); // Reset duration, will be set when video metadata loads
       setActiveSegment(null); // Reset active segment
     }
@@ -256,11 +258,11 @@ const StudentDashboard = () => {
   // Track current concept based on video time
   useEffect(() => {
     if (selectedLecture) {
-      const concept = selectedLecture.concepts.find(
-        c => currentTime >= c.startTime && currentTime < c.endTime
-      );
-      if (concept && concept.id !== activeConcept?.id) {
-        setActiveConcept(concept);
+    const concept = selectedLecture.concepts.find(
+      c => currentTime >= c.startTime && currentTime < c.endTime
+    );
+    if (concept && concept.id !== activeConcept?.id) {
+      setActiveConcept(concept);
       }
     }
   }, [currentTime, selectedLecture, activeConcept]);
@@ -291,19 +293,33 @@ const StudentDashboard = () => {
   const handlePlayPause = async () => {
     if (!videoRef.current || !selectedLecture) return;
     
+    console.log('handlePlayPause called, isPlaying:', isPlaying);
+    
     try {
       if (isPlaying) {
+        console.log('Pausing video');
         videoRef.current.pause();
         // onPause handler will set isPlaying to false
       } else {
+        console.log('Attempting to play video');
+        console.log('Video readyState:', videoRef.current.readyState);
+        console.log('Video paused:', videoRef.current.paused);
+        
         const playPromise = videoRef.current.play();
         if (playPromise !== undefined) {
+          console.log('Waiting for play promise to resolve');
           await playPromise;
+          console.log('Play promise resolved - video should be playing');
+          // Verify it's actually playing
+          if (videoRef.current.paused) {
+            console.error('Video is still paused after play promise resolved!');
+          }
           // onPlay handler will set isPlaying to true
         }
       }
     } catch (error) {
       console.error('Error in handlePlayPause:', error);
+      console.error('Error details:', error);
       // If play fails (e.g., autoplay policy), keep state as paused
       if (!isPlaying) {
         setIsPlaying(false);
@@ -393,8 +409,8 @@ const StudentDashboard = () => {
 
   const filteredConcepts = selectedLecture
     ? selectedLecture.concepts.filter(c =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.summary.toLowerCase().includes(searchQuery.toLowerCase())
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.summary.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
 
@@ -406,8 +422,8 @@ const StudentDashboard = () => {
 
   const generateSummary = () => {
     if (selectedLecture) {
-      setShowSummary(true);
-      trackEvent('seek', selectedLecture.id, undefined, { action: 'generate-summary' });
+    setShowSummary(true);
+    trackEvent('seek', selectedLecture.id, undefined, { action: 'generate-summary' });
     }
   };
 
@@ -529,14 +545,14 @@ const StudentDashboard = () => {
             </p>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* Video Player Section */}
-            <div className="lg:col-span-2 space-y-4">
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <Card className="glass-card overflow-hidden">
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Video Player Section */}
+          <div className="lg:col-span-2 space-y-4">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Card className="glass-card overflow-hidden">
                   {/* Video */}
                   <div className="relative aspect-video bg-secondary">
                     {isLoadingStream ? (
@@ -547,38 +563,92 @@ const StudentDashboard = () => {
                         </div>
                       </div>
                     ) : (
-                      <video
-                        ref={videoRef}
+                  <video
+                    ref={videoRef}
                         src={streamUrl || selectedLecture.videoUrl}
                         className="w-full h-full object-contain"
-                        onTimeUpdate={handleTimeUpdate}
+                        onClick={(e) => {
+                          // Prevent default click behavior (click to pause/play)
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          // Prevent any mouse interactions with video element
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                    onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={() => {
                           if (videoRef.current) {
                             setVideoDuration(videoRef.current.duration || 0);
                           }
                         }}
-                        onClick={(e) => {
-                          // Prevent default click behavior that might pause video
-                          e.stopPropagation();
-                          if (!isPlaying && videoRef.current) {
-                            handlePlayPause();
-                          }
-                        }}
-                        onPlay={() => {
-                          console.log('Video play event fired');
+                        onPlay={(e) => {
+                          e.preventDefault();
+                          console.log('Video play event fired - video should be playing now');
+                          console.log('Video paused property:', videoRef.current?.paused);
+                          console.log('Video readyState:', videoRef.current?.readyState);
+                          isPlayingRef.current = true;
+                          lastPlayTimeRef.current = Date.now();
                           setIsPlaying(true);
                           if (selectedLecture) {
                             trackEvent('play', selectedLecture.id, activeConcept?.id);
                           }
                         }}
                         onPause={(e) => {
-                          console.log('Video pause event fired', e);
+                          const now = Date.now();
+                          const timeSincePlay = now - lastPlayTimeRef.current;
+                          
+                          // Ignore pause events that happen within 300ms of play (likely from click propagation)
+                          // Also check if we just started playing and this pause seems unintentional
+                          if (timeSincePlay < 300 && isPlayingRef.current) {
+                            console.log('Ignoring pause event - happened too soon after play (likely click propagation)');
+                            console.log('Time since play:', timeSincePlay, 'ms');
+                            
+                            // If video got paused, resume it immediately
+                            if (videoRef.current?.paused) {
+                              console.log('Resuming video after false pause');
+                              // Use setTimeout to ensure this happens after the pause event completes
+                              setTimeout(() => {
+                                if (videoRef.current && isPlayingRef.current) {
+                                  videoRef.current.play().catch(err => {
+                                    console.error('Failed to resume after false pause:', err);
+                                    isPlayingRef.current = false;
+                                    setIsPlaying(false);
+                                  });
+                                }
+                              }, 10);
+                              return;
+                            }
+                            
+                            // If video is still playing, just ignore this pause event
+                            if (videoRef.current && !videoRef.current.paused) {
+                              console.log('Video still playing, ignoring false pause event');
+                              return;
+                            }
+                          }
+                          
+                          // Only process intentional pauses
+                          console.log('Video pause event fired - video was paused');
+                          console.log('Event target:', e.target);
+                          console.log('Event currentTarget:', e.currentTarget);
+                          console.log('Video paused property:', videoRef.current?.paused);
+                          console.log('Video paused state:', videoRef.current?.paused);
+                          console.log('Time since last play:', timeSincePlay, 'ms');
+                          
+                          isPlayingRef.current = false;
                           setIsPlaying(false);
                           if (selectedLecture) {
                             trackEvent('pause', selectedLecture.id, activeConcept?.id);
                           }
                         }}
-                        onEnded={() => setIsPlaying(false)}
+                        onWaiting={() => {
+                          console.log('Video waiting - buffering');
+                        }}
+                        onCanPlay={() => {
+                          console.log('Video can play - ready to play');
+                        }}
+                    onEnded={() => setIsPlaying(false)}
                         onError={(e) => {
                           console.error('Video error:', e);
                           console.error('Video src:', streamUrl || selectedLecture.videoUrl);
@@ -595,8 +665,14 @@ const StudentDashboard = () => {
                     <div 
                       className="absolute inset-0 flex items-center justify-center bg-secondary/50 cursor-pointer z-10"
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
+                        e.nativeEvent.stopImmediatePropagation();
                         handlePlayPause();
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                       }}
                     >
                       <div className="w-16 h-16 rounded-full gradient-bg flex items-center justify-center glow pointer-events-none">
