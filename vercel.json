@@ -3,8 +3,11 @@
   "outputDirectory": "frontend/dist",
   "devCommand": "npm run dev:frontend",
   "installCommand": "npm install",
-  "framework": "vite",
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"

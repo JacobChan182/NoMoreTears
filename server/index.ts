@@ -29,9 +29,17 @@ import uploadRoutes from './routes/upload';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Get allowed origins from environment or defaults
+const frontendUrl = process.env.FRONTEND_URL || process.env.VERCEL_URL 
+  ? `https://${process.env.VERCEL_URL}` 
+  : 'http://localhost:5173';
+
 const allowedOrigins = new Set([
-  process.env.FRONTEND_URL || 'http://localhost:5173',
+  frontendUrl,
+  'http://localhost:5173',
   'http://127.0.0.1:5173',
+  // Allow Vercel preview deployments
+  ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
 ]);
 
 app.use(cors({
@@ -63,6 +71,12 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', server: 'Express' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
+// Export app for Vercel serverless functions
+export default app;
+
+// Only listen in local development (Vercel handles this in production)
+if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  });
+}
