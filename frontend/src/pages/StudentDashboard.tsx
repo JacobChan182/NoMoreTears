@@ -413,10 +413,12 @@ const StudentDashboard = () => {
   const handleQuizFinish = async (results) => {
     const lectureId = getLectureId(selectedLecture);
     
-    console.log("📊 Quiz Finished! Sending to MongoDB:", results);
+    // results now contains: { score, total, percentage, details }
+    console.log("📊 Quiz Finished! Sending detailed results to MongoDB:", results);
   
     try {
-      const response = await fetch('http://localhost:5001/api/backboard/submit-results', {
+      // Using 127.0.0.1:5001 as per your current configuration
+      const response = await fetch('http://127.0.0.1:5001/api/backboard/submit-results', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -425,6 +427,8 @@ const StudentDashboard = () => {
           score: results.score,
           total: results.total,
           percentage: results.percentage,
+          // This is the new array containing question strings and isCorrect status
+          details: results.details, 
           timestamp: new Date().toISOString()
         }),
       });
@@ -432,8 +436,11 @@ const StudentDashboard = () => {
       if (response.ok) {
         toast({
           title: "Progress Saved!",
-          description: `You scored ${results.percentage}%`,
+          description: `You scored ${results.percentage}% and your detailed breakdown is stored.`,
         });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save');
       }
     } catch (error) {
       console.error("Failed to save quiz results:", error);

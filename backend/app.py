@@ -657,7 +657,7 @@ Use the get_video_rewind_data tool to fetch raw interaction data if needed, then
                 tool_outputs = []
 
                 for tc in response.tool_calls:
-                    if (tc.function.name == "get_video_rewind_data"):
+                    if tc.function.name == "get_video_rewind_data":
                         tool_outputs.append({
                             "tool_call_id": tc.id,
                             "output": str(interactions),
@@ -828,28 +828,6 @@ Use the get_video_rewind_data tool to fetch raw interaction data if needed, then
             "thread_id": str(thread.thread_id)
         })
 
-    @app.post('/api/quizzes')
-    def save_quiz():
-        """Store a parsed quiz in the database."""
-        data = request.get_json(force=True) or {}
-        questions = data.get("questions")
-        
-        if not questions:
-            return jsonify({"status": "error", "message": "No questions provided"}), 400
-
-        if db is not None:
-            try:
-                db.quizzes.insert_one({
-                    "questions": questions,
-                    "timestamp": datetime.now(UTC)
-                })
-                return jsonify({"status": "success"}), 201
-            except Exception as e:
-                print(f"⚠️ Failed to save quiz: {e}")
-                return jsonify({"status": "error", "message": str(e)}), 500
-        else:
-            return jsonify({"status": "error", "message": "Database not connected"}), 500
-
     @app.post('/api/index-video')
     def index_video():
         data = request.get_json(force=True) or {}
@@ -944,6 +922,40 @@ Use the get_video_rewind_data tool to fetch raw interaction data if needed, then
         return {"status": "ok", "server": "Flask"}, 200
 
     # ...existing routes remain unchanged...
+    
+    @app.post('/api/backboard/submit-results')
+    def submit_quiz_results():
+        try:
+            data = request.get_json(force=True) or {}
+            
+            # Extract basic data
+            user_id = data.get("userId")
+            lecture_id = data.get("lectureId")
+            score = data.get("score")
+            total = data.get("total")
+            percentage = data.get("percentage")
+            
+            # Extract the detailed questions/answers array
+            details = data.get("details") 
+            timestamp = data.get("timestamp") or datetime.now(UTC)
+
+            if db is not None:
+                db.student_results.insert_one({
+                    "user_id": user_id,
+                    "lecture_id": lecture_id,
+                    "score": score,
+                    "total_questions": total,
+                    "percentage": percentage,
+                    "question_details": details,  # Detailed array stored here
+                    "timestamp": timestamp,
+                    "created_at": datetime.now(UTC)
+                })
+                return jsonify({"status": "success", "message": "Detailed results saved"}), 200
+
+        except Exception as e:
+            print(f"❌ Error saving quiz results: {e}")
+            traceback.print_exc()
+            return jsonify({"status": "error", "message": str(e)}), 500
 
     return app
 

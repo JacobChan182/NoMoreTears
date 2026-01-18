@@ -13,11 +13,20 @@ interface QuizQuestion {
     explanation?: string;
 }
 
+// Updated interface to include the "details" array
 interface QuizDisplayProps {
     quizContent: string | { questions: any[] };
     onClose: () => void;
-    // New prop to handle database submission
-    onFinish?: (results: { score: number; total: number; percentage: number }) => void;
+    onFinish?: (results: { 
+        score: number; 
+        total: number; 
+        percentage: number;
+        details: Array<{
+            question: string;
+            isCorrect: boolean;
+            userAnswer: string;
+        }>
+    }) => void;
 }
 
 const QuizDisplay = ({ quizContent, onClose, onFinish }: QuizDisplayProps) => {
@@ -25,7 +34,6 @@ const QuizDisplay = ({ quizContent, onClose, onFinish }: QuizDisplayProps) => {
     const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
     const [showResults, setShowResults] = useState(false);
 
-    // Robust parsing logic
     const questions = useMemo((): QuizQuestion[] => {
         if (typeof quizContent === 'object' && quizContent.questions) {
             return quizContent.questions.map(q => ({
@@ -112,21 +120,35 @@ const QuizDisplay = ({ quizContent, onClose, onFinish }: QuizDisplayProps) => {
         setShowResults(false);
     };
 
-    // Final submission handler
+    // Modified to create the detailed list of questions/correctness
     const handleCompleteQuiz = () => {
         const score = calculateScore();
-        const percentage = Math.round((score / questions.length) * 100);
-
-        // If the parent provided an onFinish function, call it with the results
+        const total = questions.length;
+        const percentage = Math.round((score / total) * 100);
+    
+        // Create a detailed breakdown with 1 for correct and 0 for incorrect
+        const detailedResults = questions.map((q, idx) => {
+            const userSelection = selectedAnswers[idx];
+            const userLetter = userSelection?.trim().charAt(0).toUpperCase();
+            
+            // Convert boolean to 1 or 0
+            const isCorrectBinary = userLetter === q.correctAnswer ? 1 : 0;
+    
+            return {
+                question: q.question,
+                isCorrect: isCorrectBinary, // Now stores 1 or 0
+                userAnswer: userSelection
+            };
+        });
+    
         if (onFinish) {
             onFinish({
                 score,
-                total: questions.length,
-                percentage
+                total,
+                percentage,
+                details: detailedResults
             });
         }
-        
-        // Close the quiz display
         onClose();
     };
 
