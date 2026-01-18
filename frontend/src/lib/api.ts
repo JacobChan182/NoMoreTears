@@ -2,7 +2,10 @@ const DEFAULT_API_URL = import.meta.env.DEV
   ? '/api/js/api'
   : 'http://localhost:3001/api';
 
-const API_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
+const rawApiUrl = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
+const API_URL = rawApiUrl
+  .replace(/\/+$/, '')
+  .replace(/\/API(\/|$)/, '/api$1');
 
 // Sign up
 export const signup = async (email: string, password: string, role: 'student' | 'instructor') => {
