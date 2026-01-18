@@ -553,8 +553,8 @@ const StudentDashboard = () => {
               animate={{ opacity: 1, y: 0 }}
             >
               <Card className="glass-card overflow-hidden">
-                  {/* Video */}
-                  <div className="relative aspect-video bg-secondary">
+                {/* Video */}
+                <div className="relative aspect-video bg-secondary">
                     {isLoadingStream ? (
                       <div className="w-full h-full flex items-center justify-center">
                         <div className="text-center">
@@ -567,16 +567,6 @@ const StudentDashboard = () => {
                     ref={videoRef}
                         src={streamUrl || selectedLecture.videoUrl}
                         className="w-full h-full object-contain"
-                        onClick={(e) => {
-                          // Prevent default click behavior (click to pause/play)
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onMouseDown={(e) => {
-                          // Prevent any mouse interactions with video element
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
                     onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={() => {
                           if (videoRef.current) {
@@ -660,26 +650,22 @@ const StudentDashboard = () => {
                       />
                     )}
                   
-                  {/* Play overlay - only show when paused */}
-                  {!isPlaying && (
-                    <div 
-                      className="absolute inset-0 flex items-center justify-center bg-secondary/50 cursor-pointer z-10"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.nativeEvent.stopImmediatePropagation();
-                        handlePlayPause();
-                      }}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                    >
+                  {/* Click overlay to toggle play/pause - always present but invisible when playing */}
+                  <div 
+                    className={`absolute inset-0 cursor-pointer z-10 ${!isPlaying ? 'flex items-center justify-center bg-secondary/50' : ''}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handlePlayPause();
+                    }}
+                  >
+                    {/* Play button - only show when paused */}
+                    {!isPlaying && (
                       <div className="w-16 h-16 rounded-full gradient-bg flex items-center justify-center glow pointer-events-none">
                         <Play className="w-8 h-8 text-primary-foreground ml-1" />
                       </div>
+                    )}
                     </div>
-                  )}
 
                   {/* Current concept overlay */}
                   {activeConcept && (
