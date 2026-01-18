@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { Student } from '../models/Student';
 import { Course } from '../models/Course';
+import { Lecturer } from '../models/Lecturer'; // NEW
 
 const router = express.Router();
 
@@ -36,6 +37,26 @@ router.get('/:userId/courses', async (req: Request, res: Response) => {
     // Get all courses the student is enrolled in
     const courses = await Course.find({ courseId: { $in: student.courseIds } });
 
+    // Build a quick lookup of lecture segments from Lecturer documents (fallback source)
+    const courseLectureIds = courses.flatMap(c => c.lectures.map(l => l.lectureId)).filter(Boolean);
+    const lecturerSegmentsById = new Map<string, any[]>();
+
+    if (courseLectureIds.length > 0) {
+      const lecturerDocs = await Lecturer.find(
+        { 'lectures.lectureId': { $in: courseLectureIds } },
+        { lectures: 1, _id: 0 }
+      );
+
+      lecturerDocs.forEach(doc => {
+        doc.lectures.forEach(lec => {
+          const segs = lec?.rawAiMetaData?.segments;
+          if (lec?.lectureId && Array.isArray(segs) && segs.length > 0) {
+            lecturerSegmentsById.set(lec.lectureId, segs);
+          }
+        });
+      });
+    }
+
     // Transform courses and lectures to match frontend format
     const transformedCourses = courses.map(course => ({
       id: course.courseId,
@@ -45,37 +66,56 @@ router.get('/:userId/courses', async (req: Request, res: Response) => {
       lectureIds: course.lectures.map(l => l.lectureId),
     }));
 
-    // Transform all lectures from all courses, with segments from rawAiMetaData/segments
+    // Transform all lectures from all courses, with segments preferring Course.rawAiMetaData.segments, then Lecturer fallback
     const allLectures = courses.flatMap(course =>
       course.lectures.map(lecture => {
-        // Extract segments from rawAiMetaData.segments
-        const rawSegments = lecture.rawAiMetaData?.segments || [];
-        // Transform segments to match LectureSegment format
-        const lectureSegments = Array.isArray(rawSegments) ? rawSegments.map((seg: any) => ({
-          start: seg.start || seg.startTime || 0,
-          end: seg.end || seg.endTime || 0,
-          title: seg.title || seg.name || 'Untitled Segment',
-          summary: seg.summary || ''
-        })) : [];
+        // Prefer course-level segments, fallback to lecturer-level segments
+        const rawSegments =
+          (Array.isArray(lecture.rawAiMetaData?.segments) ? lecture.rawAiMetaData.segments : null) ??
+          lecturerSegmentsById.get(lecture.lectureId) ??
+          [];
+
+        const lectureSegments = Array.isArray(rawSegments)
+          ? rawSegments.map((seg: any) => ({
+              start: seg.start ?? seg.startTime ?? 0,
+              end: seg.end ?? seg.endTime ?? 0,
+              title: seg.title ?? seg.name ?? 'Untitled Segment',
+              summary: seg.summary ?? '',
+            }))
+          : [];
 
         return {
           id: lecture.lectureId,
-          title: lecture.lectureTitle,
+          lectureId: lecture.lectureId,
+          lectureTitle: lecture.lectureTitle,
+          title: lecture.lectureTitle, // also provide 'title' for frontend convenience
           courseId: course.courseId,
           videoUrl: lecture.videoUrl || '',
-          duration: 0, // Duration not stored in DB, will need to be calculated or stored
-          concepts: [], // Concepts not stored in DB, will need separate fetch
-          lectureSegments: lectureSegments,
+          duration: 0, // not stored
+          concepts: [], // not stored
+          lectureSegments,
           uploadedAt: lecture.createdAt ? new Date(lecture.createdAt) : new Date(),
         };
       })
     );
 
+    // Ensure every lecture has lectureId field
+    const formattedLectures = allLectures.map(lec => ({
+      ...lec,
+      lectureId: lec.lectureId || lec.id?.toString(),
+    }));
+
+    console.log('📤 Sending lectures with IDs:', formattedLectures.map(l => ({
+      lectureId: l.lectureId,
+      lectureTitle: l.lectureTitle,
+      segments: Array.isArray(l.lectureSegments) ? l.lectureSegments.length : 0,
+    })));
+
     res.status(200).json({
       success: true,
       data: {
         courses: transformedCourses,
-        lectures: allLectures,
+        lectures: formattedLectures,
       },
     });
   } catch (error) {

@@ -3,6 +3,13 @@ import { Lecturer } from '../models/Lecturer';
 
 const router = express.Router();
 
+// NOTE: Ensure your R2 bucket has CORS configured:
+// In Cloudflare R2 dashboard, add these CORS rules:
+// Allowed Origins: * (or your specific domain)
+// Allowed Methods: GET, HEAD
+// Allowed Headers: *
+// Max Age: 3600
+
 // Create or update lecturer with a lecture
 router.post('/:userId/lectures', async (req: Request, res: Response) => {
   try {

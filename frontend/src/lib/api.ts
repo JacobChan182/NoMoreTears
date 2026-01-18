@@ -208,25 +208,29 @@ export const getInstructorCourses = async (instructorId: string) => {
 };
 
 // Get student courses and lectures
-export const getStudentCourses = async (userId: string) => {
+export const getStudentCourses = async (studentId: string) => {
   try {
-    const response = await fetch(`${API_URL}/students/${userId}/courses`, {
-      method: 'GET',
+    const response = await fetch(`${API_URL}/students/${studentId}/courses`, {
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return { success: true, data: { courses: [], lectures: [] } };
-      }
-      throw new Error('Failed to fetch student courses');
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    
+    // Debug: Log raw API response
+    console.log('📡 API Response - Lectures:', data.data?.lectures);
+    if (data.data?.lectures && data.data.lectures.length > 0) {
+      console.log('📡 First lecture sample:', data.data.lectures[0]);
+    }
+    
+    return data;
   } catch (error) {
-    console.error('Error fetching student courses:', error);
+    console.error('Failed to fetch student courses:', error);
     throw error;
   }
 };

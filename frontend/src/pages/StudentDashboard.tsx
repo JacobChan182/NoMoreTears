@@ -6,7 +6,7 @@ import { getStudentCourses } from '@/lib/api';
 import { Concept, Lecture, Course } from '@/types';
 import { 
   Search, Sparkles, Clock, 
-  BookOpen, ChevronRight, Zap, LogOut, User, ChevronDown, TrendingUp
+  BookOpen, ChevronRight, Zap, LogOut, User, ChevronDown, TrendingUp, ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,9 +20,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import VideoPlayer, { VideoPlayerRef } from '@/components/VideoPlayer';
 import ChatWidget from '@/components/ChatWidget';
+import { useToast } from '@/hooks/use-toast';
+import QuizDisplay from '@/components/QuizDisplay';
 
 const StudentDashboard = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -31,6 +34,9 @@ const StudentDashboard = () => {
   const [showSummary, setShowSummary] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const videoPlayerRef = useRef<VideoPlayerRef | null>(null);
+  const [isLoadingStream, setIsLoadingStream] = useState(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [generatedQuiz, setGeneratedQuiz] = useState<any>(null);
 
   // TODO: Replace with actual assessment/quiz scores from your teammate's implementation
   // Placeholder worker personality scores (0-100 for each type)
@@ -107,26 +113,106 @@ const StudentDashboard = () => {
 
         if (response.success && response.data) {
           const { courses: apiCourses, lectures: apiLectures } = response.data;
+          
+          console.log('📥 Raw API lectures:', apiLectures);
+          
+          // 1. Map and preserve ALL fields from API including segments
+          const formattedLectures = apiLectures.map((lec: any) => {
+            const formatted = {
+              ...lec, // Preserve everything from API first
+              id: lec.lectureId,
+              lectureId: lec.lectureId,
+              title: lec.lectureTitle || lec.title,
+              lectureTitle: lec.lectureTitle || lec.title,
+              lectureSegments: Array.isArray(lec.lectureSegments) ? lec.lectureSegments : [],
+            };
+            console.log(`📝 Formatted lecture ${formatted.id}:`, {
+              title: formatted.title,
+              segmentCount: formatted.lectureSegments.length,
+              segments: formatted.lectureSegments
+            });
+            return formatted;
+          });
+          
+          console.log('✅ Formatted lectures with segments:', formattedLectures.map((l: any) => ({
+            id: l.id,
+            title: l.title,
+            segmentCount: l.lectureSegments?.length || 0
+          })));
 
-          // Transform and enrich lectures with mock data (for concepts, duration, etc.)
-          const enrichedLectures = enrichLecturesWithMockData(apiLectures || []);
+          // 2. Enrich with mock concepts ONLY (don't let enrichment touch segments)
+          const enriched = enrichLecturesWithMockData(formattedLectures);
+          
+          console.log('🔧 After enrichment:', enriched.map((l: any) => ({
+            id: l.id,
+            title: l.title,
+            segmentCount: l.lectureSegments?.length || 0,
+            conceptCount: l.concepts?.length || 0
+          })));
+          
+          // 3. Merge: FORCE preserve segments and other real data from formatted
+          const finalLectures = enriched.map((enrichedLec: any) => {
+            const original = formattedLectures.find((o: any) => o.id === enrichedLec.id);
+            if (!original) {
+              console.warn(`⚠️ No original found for enriched lecture ${enrichedLec.id}`);
+              return enrichedLec;
+            }
+            
+            const merged = {
+              ...enrichedLec, // Start with enriched (has mock concepts)
+              // FORCE overwrite with real API data
+              lectureSegments: original.lectureSegments, // Always use original segments
+              videoUrl: original.videoUrl,
+              uploadedAt: original.uploadedAt,
+              lectureId: original.lectureId,
+              // Only use enriched concepts if original has none
+              concepts: (original.concepts && original.concepts.length > 0) 
+                ? original.concepts 
+                : enrichedLec.concepts,
+            };
+            
+            console.log(`🔀 Merged lecture ${merged.id}:`, {
+              title: merged.title,
+              segmentCount: merged.lectureSegments?.length || 0,
+              conceptCount: merged.concepts?.length || 0,
+              segments: merged.lectureSegments
+            });
+            
+            return merged;
+          });
 
-          // Determine which courses and lectures to use
+          console.log('🎯 Final lectures after merge:', finalLectures.map((l: any) => ({
+            id: l.id,
+            title: l.title,
+            segmentCount: l.lectureSegments?.length || 0,
+            conceptCount: l.concepts?.length || 0
+          })));
+
           const finalCourses = (apiCourses && apiCourses.length > 0) ? apiCourses : mockCourses;
-          const finalLectures = (enrichedLectures.length > 0) ? enrichedLectures : mockLectures;
 
           setCourses(finalCourses);
-          setLectures(finalLectures);
+          setLectures(finalLectures.length > 0 ? finalLectures : mockLectures);
 
-          // Set initial course selection
+          // Set initial course and lecture selection
           if (finalCourses.length > 0) {
             const firstCourseId = finalCourses[0].id;
             setSelectedCourseId(firstCourseId);
             
-            // Set initial lecture selection for the first course
             const firstCourseLectures = finalLectures.filter(l => l.courseId === firstCourseId);
             if (firstCourseLectures.length > 0) {
-              setSelectedLecture(firstCourseLectures[0]);
+              // Prefer lectures with segments for initial selection
+              const lectureWithSegments = firstCourseLectures.find(
+                l => Array.isArray(l.lectureSegments) && l.lectureSegments.length > 0
+              );
+              const initialLecture = lectureWithSegments || firstCourseLectures[0];
+              
+              console.log('🎬 Setting initial lecture:', {
+                id: initialLecture.id,
+                title: initialLecture.title,
+                segmentCount: initialLecture.lectureSegments?.length || 0,
+                hasSegments: Array.isArray(initialLecture.lectureSegments) && initialLecture.lectureSegments.length > 0
+              });
+              setSelectedLecture(initialLecture);
             } else if (finalLectures.length > 0) {
               setSelectedLecture(finalLectures[0]);
             }
@@ -230,6 +316,80 @@ const StudentDashboard = () => {
   const generateSummary = () => {
     if (selectedLecture) {
       setShowSummary(true);
+    }
+  };
+
+  const generateQuiz = async () => {
+    if (!selectedLecture) return;
+
+    // Try multiple possible ID fields
+    const lectureId = selectedLecture.lectureId 
+      || (selectedLecture as any)._id 
+      || selectedLecture.id;
+    
+    const videoTitle = selectedLecture.lectureTitle || selectedLecture.title;
+    
+    console.log("🚀 PAYLOAD CHECK:", {
+      lectureId: lectureId,
+      selectedLecture_lectureId: selectedLecture.lectureId,
+      selectedLecture_id: selectedLecture.id,
+      selectedLecture_mongoId: (selectedLecture as any)._id,
+      url: selectedLecture.videoUrl,
+      title: videoTitle,
+      allKeys: Object.keys(selectedLecture) // See all available keys
+    });
+
+    if (!lectureId) {
+      console.error("❌ No valid lecture ID found. Full lecture object:", selectedLecture);
+      toast({
+        title: 'Error',
+        description: 'Lecture ID is missing. Cannot generate quiz. Check console for details.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsGeneratingQuiz(true);
+    try {
+      const response = await fetch('http://localhost:5001/api/backboard/generate-content', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lecture_id: lectureId,
+          video_id: selectedLecture.videoUrl,
+          video_title: videoTitle,
+          content_type: 'quiz'
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        console.log("Quiz Generated:", data.content);
+        setGeneratedQuiz(data.content);
+        toast({
+          title: 'Success',
+          description: 'Quiz generated successfully!',
+        });
+      } else {
+        console.error("Error:", data.message);
+        toast({
+          title: 'Error',
+          description: data.message || 'Failed to generate quiz',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error("Network Error:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to connect to quiz generation service',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingQuiz(false);
     }
   };
 
@@ -368,10 +528,29 @@ const StudentDashboard = () => {
                   <div>
                     <h1 className="text-xl font-semibold">{selectedLecture.title}</h1>
                   </div>
-                  <Button onClick={generateSummary} className="gradient-bg glow">
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    2-Min Catch-Up
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={generateSummary} className="gradient-bg glow">
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      2-Min Catch-Up
+                    </Button>
+                    <Button 
+                      onClick={generateQuiz} 
+                      variant="outline"
+                      disabled={isGeneratingQuiz}
+                    >
+                      {isGeneratingQuiz ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <ClipboardList className="w-4 h-4 mr-2" />
+                          Generate Quiz
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </Card>
 
@@ -410,6 +589,14 @@ const StudentDashboard = () => {
                     </Button>
                   </Card>
                 </motion.div>
+              )}
+
+              {/* Generated Quiz Display - UPDATED */}
+              {generatedQuiz && (
+                <QuizDisplay 
+                  quizContent={generatedQuiz} 
+                  onClose={() => setGeneratedQuiz(null)} 
+                />
               )}
             </div>
 

@@ -147,18 +147,38 @@ export const transformInstructorLectures = (responseData: any): { lectures: Lect
 };
 
 // Helper to merge real lectures with mock data (for concepts, duration, etc.)
-export const enrichLecturesWithMockData = (realLectures: Lecture[]): Lecture[] => {
-  return realLectures.map(lecture => {
-    // Try to find matching mock lecture for concepts and duration
-    const mockLecture = mockLectures.find(m => m.id === lecture.id);
-    if (mockLecture) {
-      return {
-        ...lecture,
-        duration: lecture.duration || mockLecture.duration,
-        concepts: lecture.concepts.length > 0 ? lecture.concepts : mockLecture.concepts,
-      };
-    }
-    return lecture;
+export const enrichLecturesWithMockData = (lectures: any[]): Lecture[] => {
+  return lectures.map((lec) => {
+    const lectureId = lec.lectureId || lec.id;
+    console.log('🔧 Enriching lecture:', {
+      original: lec,
+      resolved: lectureId,
+      title: lec.title || lec.lectureTitle,
+      hasSegments: Array.isArray(lec.lectureSegments) && lec.lectureSegments.length > 0,
+      segmentCount: lec.lectureSegments?.length || 0
+    });
+
+    // Find matching mock lecture for concepts only
+    const mockMatch = mockLectures.find(m => m.id === lectureId);
+
+    return {
+      ...lec, // Preserve EVERYTHING from input first
+      id: lectureId,
+      lectureId: lectureId,
+      title: lec.title || lec.lectureTitle || 'Untitled',
+      lectureTitle: lec.lectureTitle || lec.title || 'Untitled',
+      // Preserve real segments from input, don't use mock
+      lectureSegments: Array.isArray(lec.lectureSegments) ? lec.lectureSegments : [],
+      // Only add mock concepts if none exist
+      concepts: (lec.concepts && lec.concepts.length > 0) 
+        ? lec.concepts 
+        : (mockMatch?.concepts || []),
+      // Preserve all other real data
+      videoUrl: lec.videoUrl || '',
+      uploadedAt: lec.uploadedAt || new Date(),
+      duration: lec.duration || 0,
+      courseId: lec.courseId || '',
+    };
   });
 };
 
