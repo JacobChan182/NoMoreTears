@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
-import { Student } from '../models/Student';
-import { Course } from '../models/Course';
-import { Lecturer } from '../models/Lecturer'; // NEW
+import { Student } from '../models/Student.js';
+import { Course } from '../models/Course.js';
+import { Lecturer } from '../models/Lecturer.js'; // NEW
 
 const router = express.Router();
 

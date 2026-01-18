@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
-import { Student } from '../models/Student';
-import { Course } from '../models/Course';
+import { Student } from '../models/Student.js';
+import { Course } from '../models/Course.js';
 
 const router = express.Router();
 

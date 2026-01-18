@@ -2,9 +2,9 @@ import express, { Request, Response } from 'express';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import axios from 'axios';
-import { s3Client, BUCKET_NAME, generateVideoKey, getVideoUrl } from '../utils/r2';
-import { Lecturer } from '../models/Lecturer';
-import { Course } from '../models/Course';
+import { s3Client, BUCKET_NAME, generateVideoKey, getVideoUrl } from '../utils/r2.js';
+import { Lecturer } from '../models/Lecturer.js';
+import { Course } from '../models/Course.js';
 
 const router = express.Router();
 

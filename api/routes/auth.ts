@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
-import { User } from '../models/User';
-import { generatePseudonymId } from '../utils/pseudonym';
-import { Login } from '../models/Login';
+import { User } from '../models/User.js';
+import { generatePseudonymId } from '../utils/pseudonym.js';
+import { Login } from '../models/Login.js';
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { IRewindEvent } from './RewindEvent';
+import { IRewindEvent } from './RewindEvent.js';
 
 export interface ILectureProgress {
   lectureId: string;
