@@ -632,10 +632,6 @@ const InstructorDashboard = () => {
               <UserCheck className="w-4 h-4" />
               Worker Types
             </TabsTrigger>
-            <TabsTrigger value="segment-rewinds" className="flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              Segment Rewinds
-            </TabsTrigger>
           </TabsList>
 
           {/* Concept Analysis Tab */}
@@ -710,6 +706,52 @@ const InstructorDashboard = () => {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Segment Rewinds Chart */}
+            {selectedLecture?.lectureSegments && selectedLecture.lectureSegments.length > 0 && (
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart2 className="w-5 h-5 text-primary" />
+                    Segment Rewind Count
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart data={selectedLecture.lectureSegments.map((seg, index) => ({
+                      name: seg.title.length > 20 ? seg.title.substring(0, 20) + '...' : seg.title,
+                      fullName: seg.title,
+                      rewinds: seg.count || 0,
+                      index,
+                      time: `${Math.floor(seg.start / 60)}:${String(Math.floor(seg.start % 60)).padStart(2, '0')}`,
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="hsl(var(--muted-foreground))" 
+                        tick={{ fontSize: 11 }}
+                        angle={-45}
+                        textAnchor="end"
+                        height={100}
+                      />
+                      <YAxis stroke="hsl(var(--muted-foreground))" />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                        }}
+                        formatter={(value: any, name: any, props: any) => [
+                          `${value} rewind${value !== 1 ? 's' : ''}`,
+                          `Segment ${props.payload.index + 1}: ${props.payload.fullName}`
+                        ]}
+                      />
+                      <Bar dataKey="rewinds" fill={CHART_COLORS[2]} name="Rewinds" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Timeline Tab */}
@@ -1046,162 +1088,6 @@ const InstructorDashboard = () => {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Segment Rewinds Tab */}
-          <TabsContent value="segment-rewinds" className="space-y-6">
-            {selectedLecture?.lectureSegments && selectedLecture.lectureSegments.length > 0 ? (
-              <>
-                {/* Stats Overview */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[
-                    { 
-                      label: 'Total Rewinds', 
-                      value: selectedLecture.lectureSegments.reduce((sum, seg) => sum + (seg.count || 0), 0),
-                      icon: Activity,
-                      color: 'text-primary'
-                    },
-                    { 
-                      label: 'Total Segments', 
-                      value: selectedLecture.lectureSegments.length,
-                      icon: BookOpen,
-                      color: 'text-chart-2'
-                    },
-                    { 
-                      label: 'Avg Rewinds/Segment', 
-                      value: Math.round(selectedLecture.lectureSegments.reduce((sum, seg) => sum + (seg.count || 0), 0) / selectedLecture.lectureSegments.length),
-                      icon: TrendingUp,
-                      color: 'text-chart-3'
-                    },
-                  ].map((stat, i) => (
-                    <motion.div
-                      key={stat.label}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                    >
-                      <Card className="glass-card">
-                        <CardContent className="p-4 flex items-center gap-4">
-                          <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
-                            <stat.icon className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">{stat.label}</p>
-                            <p className="text-2xl font-bold">{stat.value}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {/* Rewind Chart */}
-                <Card className="glass-card">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <BarChart2 className="w-5 h-5 text-primary" />
-                      Segment Rewind Count
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={350}>
-                      <BarChart data={selectedLecture.lectureSegments.map((seg, index) => ({
-                        name: seg.title.length > 20 ? seg.title.substring(0, 20) + '...' : seg.title,
-                        fullName: seg.title,
-                        rewinds: seg.count || 0,
-                        index,
-                        time: `${Math.floor(seg.start / 60)}:${String(Math.floor(seg.start % 60)).padStart(2, '0')}`,
-                      }))}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis 
-                          dataKey="name" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          tick={{ fontSize: 11 }}
-                          angle={-45}
-                          textAnchor="end"
-                          height={100}
-                        />
-                        <YAxis stroke="hsl(var(--muted-foreground))" />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px',
-                          }}
-                          formatter={(value: any, name: any, props: any) => [
-                            `${value} rewind${value !== 1 ? 's' : ''}`,
-                            `Segment ${props.payload.index + 1}: ${props.payload.fullName}`
-                          ]}
-                        />
-                        <Bar dataKey="rewinds" fill={CHART_COLORS[0]} name="Rewinds" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Segment Details Table */}
-                <Card className="glass-card">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <BookOpen className="w-5 h-5 text-primary" />
-                      Segment Details
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {selectedLecture.lectureSegments
-                        .sort((a, b) => (b.count || 0) - (a.count || 0))
-                        .map((segment, index) => (
-                          <motion.div
-                            key={index}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className="p-4 rounded-lg bg-muted/50 border border-border hover:bg-muted transition-colors"
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-medium">{segment.title}</span>
-                                  <Badge variant="outline" className="text-xs">
-                                    #{index + 1}
-                                  </Badge>
-                                </div>
-                                {segment.summary && (
-                                  <p className="text-sm text-muted-foreground mb-2">{segment.summary}</p>
-                                )}
-                                <div className="flex gap-4 text-xs text-muted-foreground">
-                                  <span>Time: {Math.floor(segment.start / 60)}:{String(Math.floor(segment.start % 60)).padStart(2, '0')} - {Math.floor(segment.end / 60)}:{String(Math.floor(segment.end % 60)).padStart(2, '0')}</span>
-                                  <span>Duration: {Math.floor((segment.end - segment.start) / 60)}:{String(Math.floor((segment.end - segment.start) % 60)).padStart(2, '0')}</span>
-                                </div>
-                              </div>
-                              <div className="ml-4 text-right">
-                                <Badge 
-                                  variant={segment.count && segment.count > 0 ? 'default' : 'secondary'}
-                                  className="text-lg px-3 py-1"
-                                >
-                                  {segment.count || 0}
-                                </Badge>
-                                <p className="text-xs text-muted-foreground mt-1">rewind{segment.count !== 1 ? 's' : ''}</p>
-                              </div>
-                            </div>
-                          </motion.div>
-                        ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            ) : (
-              <Card className="glass-card">
-                <CardContent className="py-12 text-center">
-                  <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No segments available for this lecture yet</p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Segments will appear after video processing is complete
-                  </p>
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
         </Tabs>
 
