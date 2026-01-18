@@ -73,12 +73,15 @@ router.post('/signup', async (req: Request, res: Response) => {
     };
 
     // Set HTTP-only cookie with user ID
+    // On Vercel, always use secure=true for HTTPS, and set domain for cross-subdomain cookies
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     res.cookie('userId', newUser._id.toString(), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction, // Must be true for HTTPS (Vercel uses HTTPS)
+      sameSite: 'lax', // Allows cookies in cross-site requests (like vercel.app -> hiready.tech)
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/',
+      // Don't set domain explicitly - let browser set it based on the request origin
     });
 
     res.status(201).json({
@@ -161,12 +164,15 @@ router.post('/signin', async (req: Request, res: Response) => {
     };
 
     // Set HTTP-only cookie with user ID
+    // On Vercel, always use secure=true for HTTPS, and set domain for cross-subdomain cookies
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     res.cookie('userId', user._id.toString(), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction, // Must be true for HTTPS (Vercel uses HTTPS)
+      sameSite: 'lax', // Allows cookies in cross-site requests (like vercel.app -> hiready.tech)
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/',
+      // Don't set domain explicitly - let browser set it based on the request origin
     });
 
     res.status(200).json({
@@ -192,8 +198,14 @@ router.get('/me', async (req: Request, res: Response) => {
     // Find user by ID
     const user = await User.findById(userId);
     if (!user) {
-      // Clear invalid cookie
-      res.clearCookie('userId', { path: '/' });
+      // Clear invalid cookie (must match cookie options)
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+      res.clearCookie('userId', { 
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/' 
+      });
       return res.status(401).json({ error: 'User not found' });
     }
 
@@ -220,7 +232,14 @@ router.get('/me', async (req: Request, res: Response) => {
 
 // Logout - clear cookie
 router.post('/logout', async (req: Request, res: Response) => {
-  res.clearCookie('userId', { path: '/' });
+  // Must match cookie options when clearing
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+  res.clearCookie('userId', { 
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    path: '/' 
+  });
   res.status(200).json({ success: true, message: 'Logged out successfully' });
 });
 
