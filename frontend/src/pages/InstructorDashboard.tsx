@@ -89,6 +89,7 @@ const InstructorDashboard = () => {
     segments: Array<{ start: number; end: number; title: string; summary: string; count?: number }>;
   } | null>(null);
   const [isLoadingWatchProgress, setIsLoadingWatchProgress] = useState(false);
+  const [showAllFrictionPoints, setShowAllFrictionPoints] = useState(false);
 
   // TODO: Replace with actual worker personality data from assessments/quizzes
   // Mock data for employee worker personality distribution
@@ -598,7 +599,64 @@ const InstructorDashboard = () => {
         })
       : [];
 
-  const topStrugglingConcepts = conceptInsights.slice(0, 3);
+  const frictionSegments = useMemo(() => {
+    const segments = segmentRewindData?.segments ?? [];
+    if (segments.length === 0) return [];
+
+    const retentionData = watchProgressData?.retentionData ?? [];
+
+    const getRetentionAt = (time: number) => {
+      if (retentionData.length === 0) return 0;
+      let closest = retentionData[0];
+      for (const point of retentionData) {
+        if (Math.abs(point.time - time) < Math.abs(closest.time - time)) {
+          closest = point;
+        }
+      }
+      return closest.retention ?? 0;
+    };
+
+    const perSegment = segments.map((seg, index) => {
+      const start = seg.start ?? 0;
+      const end = seg.end ?? start;
+      const length = Math.max(1, end - start);
+      const views = seg.count ?? 0;
+      const viewsPerMinute = views / (length / 60);
+      const startRetention = getRetentionAt(start);
+      const endRetention = getRetentionAt(end);
+      const dropoffRate = Math.max(0, (startRetention - endRetention) / 100);
+
+      return {
+        segmentId: `${start}-${end}-${index}`,
+        index,
+        name: seg.title || `Segment ${index + 1}`,
+        views,
+        viewsPerMinute,
+        dropoffRate,
+      };
+    });
+
+    const maxViewsPerMinute = Math.max(
+      ...perSegment.map((seg) => seg.viewsPerMinute),
+      1
+    );
+
+    return perSegment
+      .map((seg) => {
+        const normalizedViews = seg.viewsPerMinute / maxViewsPerMinute;
+        const score = (0.6 * seg.dropoffRate + 0.4 * normalizedViews) * 100;
+        return {
+          ...seg,
+          struggleScore: Math.round(score),
+        };
+      })
+      .sort((a, b) => b.struggleScore - a.struggleScore);
+  }, [segmentRewindData, watchProgressData]);
+
+  const topStrugglingConcepts = frictionSegments.slice(0, 3);
+  const displayedStrugglingConcepts = showAllFrictionPoints
+    ? frictionSegments
+    : topStrugglingConcepts;
 
   return (
     <div className="min-h-screen bg-background">
@@ -756,7 +814,7 @@ const InstructorDashboard = () => {
           {[
             { icon: Users, label: 'Total Employees', value: mockStudents.length, color: 'text-primary' },
             { icon: Eye, label: 'Avg. Watch Rate', value: '78%', color: 'text-chart-3' },
-            { icon: AlertTriangle, label: 'Friction Points', value: topStrugglingConcepts.length, color: 'text-destructive' },
+            { icon: AlertTriangle, label: 'Friction Points', value: frictionSegments.length, color: 'text-destructive' },
             { icon: Activity, label: 'Engagement Score', value: '82/100', color: 'text-chart-2' },
           ].map((stat, i) => (
             <motion.div
@@ -805,32 +863,48 @@ const InstructorDashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-destructive" />
-                Friction Points
+                Friction Points Ranking
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {topStrugglingConcepts.map((concept, i) => (
+              {displayedStrugglingConcepts.map((concept, i) => (
                 <motion.div
-                  key={concept.conceptId}
+                  key={concept.segmentId}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.1 }}
                   className="p-4 rounded-lg bg-muted/50"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-sm">{concept.conceptName}</span>
+                    <span className="font-medium text-sm">#{i + 1} {concept.name}</span>
                     <Badge 
                       variant={concept.struggleScore > 60 ? 'destructive' : 'secondary'}
                     >
-                      {Math.round(concept.struggleScore)}% struggle
+                      {Math.round(concept.struggleScore)}% friction
                     </Badge>
                   </div>
                   <div className="flex gap-4 text-xs text-muted-foreground">
-                    <span>{concept.replayCount} replays</span>
-                    <span>{concept.dropOffCount} drop-offs</span>
+                    <span>{concept.views} views</span>
+                    <span>{Math.round(concept.dropoffRate * 100)}% drop-off</span>
                   </div>
                 </motion.div>
               ))}
+              {displayedStrugglingConcepts.length === 0 && (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  No friction data available yet.
+                </div>
+              )}
+              {frictionSegments.length > 3 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setShowAllFrictionPoints((prev) => !prev)}
+                >
+                  {showAllFrictionPoints ? 'Show top 3' : `Show all ${frictionSegments.length}`}
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -855,40 +929,6 @@ const InstructorDashboard = () => {
           {/* Concept Analysis Tab */}
           <TabsContent value="concepts" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-destructive" />
-                    Most Misunderstood Concepts
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={struggleChartData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis type="number" stroke="hsl(var(--muted-foreground))" />
-                      <YAxis 
-                        type="category" 
-                        dataKey="name" 
-                        width={120}
-                        stroke="hsl(var(--muted-foreground))"
-                        tick={{ fontSize: 12 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                        labelFormatter={(_, payload) => payload[0]?.payload?.fullName}
-                      />
-                      <Bar dataKey="replays" fill={CHART_COLORS[0]} name="Replays" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="dropOffs" fill={CHART_COLORS[3]} name="Drop-offs" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
               {(() => {
                 const baseSegments = selectedLecture?.lectureSegments || [];
                 const chartSegments =
@@ -904,7 +944,7 @@ const InstructorDashboard = () => {
                 }
 
                 return (
-                  <Card className="glass-card">
+                  <Card className="glass-card lg:col-span-2">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <BarChart2 className="w-5 h-5 text-primary" />
@@ -912,7 +952,7 @@ const InstructorDashboard = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={350}>
+                      <ResponsiveContainer width="100%" height={420}>
                         <BarChart data={chartSegments.map((seg, index) => {
                           const count = seg.count ?? 0;
                           return {
@@ -932,7 +972,12 @@ const InstructorDashboard = () => {
                             textAnchor="end"
                             height={100}
                           />
-                          <YAxis stroke="hsl(var(--muted-foreground))" />
+                          <YAxis
+                            stroke="hsl(var(--muted-foreground))"
+                            domain={[0, 'dataMax + 1']}
+                            allowDecimals={false}
+                            tickCount={6}
+                          />
                           <Tooltip
                             contentStyle={{
                               backgroundColor: 'hsl(var(--card))',
