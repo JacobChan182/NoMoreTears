@@ -24,21 +24,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const checkSession = async () => {
       try {
         const response = await getMe();
-        if (response.success && response.data) {
+        if (response && response.success && response.data) {
           const userData = response.data;
-          const restoredUser: User = {
-            id: userData.id,
-            pseudonymId: userData.pseudonymId,
-            role: userData.role,
-            courseIds: userData.courseIds || [],
-            cluster: userData.cluster as BehavioralCluster | undefined,
-            createdAt: new Date(userData.createdAt),
-          };
-          setUser(restoredUser);
+          // Validate userData has required fields
+          if (userData && userData.id && userData.role) {
+            const restoredUser: User = {
+              id: userData.id,
+              pseudonymId: userData.pseudonymId || '',
+              role: userData.role,
+              courseIds: userData.courseIds || [],
+              cluster: userData.cluster as BehavioralCluster | undefined,
+              createdAt: userData.createdAt ? new Date(userData.createdAt) : new Date(),
+            };
+            setUser(restoredUser);
+          }
         }
       } catch (err) {
         // Silent fail - no session exists
-        console.error('Failed to restore session:', err);
+        console.debug('No active session found:', err);
       } finally {
         setIsLoading(false);
       }

@@ -60,7 +60,7 @@ console.log("!!! VITE IS READING THE FRONTEND CONFIG !!!");
 export default defineConfig(({ mode }) => ({
   root: path.resolve(__dirname, "./"),
   server: {
-    host: "127.0.0.1",
+    host: true, // Allow connections from localhost, 127.0.0.1, and network
     port: 5173,
     strictPort: true, // This stops it from jumping to 8081
     hmr: {

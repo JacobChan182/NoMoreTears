@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { mockLectures, mockCourses, calculateConceptInsights, calculateClusterInsights, mockStudents, transformInstructorLectures, enrichLecturesWithMockData } from '@/data/mockData';
-import { getInstructorLectures, createCourse, updateCourse, getCourseStudents, addStudentsToCourse, removeStudentFromCourse } from '@/lib/api';
+import { getInstructorLectures, createCourse, updateCourse, getCourseStudents, addStudentsToCourse, removeStudentFromCourse, getLectureWatchProgress } from '@/lib/api';
 import { Lecture } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 import { 
   Zap, LogOut, Users, TrendingUp, AlertTriangle, BookOpen, 
-  BarChart2, PieChart as PieIcon, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, UserCheck, ChevronRight
+  BarChart2, PieChart as PieIcon, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, ChevronRight, UserCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,6 +80,11 @@ const InstructorDashboard = () => {
   const [newStudentEmail, setNewStudentEmail] = useState('');
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [isSavingCourse, setIsSavingCourse] = useState(false);
+  const [watchProgressData, setWatchProgressData] = useState<{
+    retentionData?: Array<{ time: number; viewers: number; retention: number }>;
+    totalStudents?: number;
+  } | null>(null);
+  const [isLoadingWatchProgress, setIsLoadingWatchProgress] = useState(false);
 
   // TODO: Replace with actual worker personality data from assessments/quizzes
   // Mock data for employee worker personality distribution
@@ -183,6 +188,37 @@ const InstructorDashboard = () => {
       setSelectedLecture(lectures[0]);
     }
   }, [lectures, selectedLecture]);
+
+  // Fetch watch progress when selected lecture changes
+  useEffect(() => {
+    const fetchWatchProgress = async () => {
+      if (!selectedLecture) {
+        setWatchProgressData(null);
+        return;
+      }
+
+      try {
+        setIsLoadingWatchProgress(true);
+        const response = await getLectureWatchProgress(selectedLecture.id);
+        if (response && response.success && response.data) {
+          setWatchProgressData({
+            retentionData: response.data.retentionData || [],
+            totalStudents: response.data.totalStudents || 0,
+          });
+        } else {
+          setWatchProgressData(null);
+        }
+      } catch (error) {
+        // Silently fail - watch progress is optional
+        console.debug('Watch progress not available:', error);
+        setWatchProgressData(null);
+      } finally {
+        setIsLoadingWatchProgress(false);
+      }
+    };
+
+    fetchWatchProgress();
+  }, [selectedLecture]);
 
   const conceptInsights = useMemo(() => calculateConceptInsights(), []);
   const clusterInsights = useMemo(() => calculateClusterInsights(), []);
@@ -497,15 +533,25 @@ const InstructorDashboard = () => {
   }));
 
   // Timeline data for drop-off visualization
-  const timelineData = selectedLecture ? selectedLecture.concepts.map(concept => {
-    const insight = conceptInsights.find(i => i.conceptId === concept.id);
-    return {
-      name: concept.name.substring(0, 10) + '...',
-      time: `${Math.floor(concept.startTime / 60)}:${String(concept.startTime % 60).padStart(2, '0')}`,
-      viewers: 100 - (insight?.dropOffCount || 0) * 2,
-      replays: insight?.replayCount || 0,
-    };
-  }) : [];
+  // Use real watch progress data if available, otherwise fall back to mock data
+  const timelineData = watchProgressData?.retentionData && watchProgressData.retentionData.length > 0
+    ? watchProgressData.retentionData.map((data) => ({
+        name: `${Math.floor(data.time / 60)}:${String(Math.floor(data.time % 60)).padStart(2, '0')}`,
+        time: `${Math.floor(data.time / 60)}:${String(Math.floor(data.time % 60)).padStart(2, '0')}`,
+        viewers: data.retention,
+        replays: 0, // Replays not tracked in watch progress yet
+      }))
+    : selectedLecture
+      ? selectedLecture.concepts.map(concept => {
+          const insight = conceptInsights.find(i => i.conceptId === concept.id);
+          return {
+            name: concept.name.substring(0, 10) + '...',
+            time: `${Math.floor(concept.startTime / 60)}:${String(concept.startTime % 60).padStart(2, '0')}`,
+            viewers: 100 - (insight?.dropOffCount || 0) * 2,
+            replays: insight?.replayCount || 0,
+          };
+        })
+      : [];
 
   const topStrugglingConcepts = conceptInsights.slice(0, 3);
 

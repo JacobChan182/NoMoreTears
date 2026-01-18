@@ -701,3 +701,65 @@ export const getVideoEngagementReport = async (
     throw error;
   }
 };
+
+// Update watch progress for a student's lecture
+export const updateWatchProgress = async (
+  userId: string,
+  lectureId: string,
+  courseId: string,
+  lectureTitle: string,
+  currentTime: number,
+  watchedTimestamps?: number[]
+) => {
+  try {
+    const response = await fetch(`${API_URL}/analytics/watch-progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        userId,
+        lectureId,
+        courseId,
+        lectureTitle,
+        currentTime,
+        watchedTimestamps,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to update watch progress');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating watch progress:', error);
+    // Don't throw - watch progress updates should be non-blocking
+    return { success: false };
+  }
+};
+
+// Get aggregated watch progress for a lecture (for instructor view)
+export const getLectureWatchProgress = async (lectureId: string) => {
+  try {
+    const response = await fetch(`${API_URL}/analytics/lecture/${lectureId}/watch-progress`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      // Return empty data instead of throwing - watch progress is optional
+      return { success: false, data: null };
+    }
+
+    return await response.json();
+  } catch (error) {
+    // Return empty data instead of throwing - watch progress is optional
+    console.debug('Watch progress not available (this is normal if no students have watched yet):', error);
+    return { success: false, data: null };
+  }
+};

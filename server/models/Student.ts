@@ -8,6 +8,8 @@ export interface ILectureProgress {
   assignedAt: Date;
   rewindEvents: IRewindEvent[];
   lastAccessedAt?: Date;
+  maxWatchedTimestamp?: number; // Highest timestamp reached (in seconds)
+  watchedTimestamps?: number[]; // Array of timestamps that have been watched (in seconds, rounded)
 }
 
 export interface IStudent {
@@ -27,6 +29,8 @@ const LectureProgressSchema = new Schema<ILectureProgress>({
   assignedAt: { type: Date, default: Date.now },
   rewindEvents: { type: Schema.Types.Mixed, default: [] },
   lastAccessedAt: { type: Date },
+  maxWatchedTimestamp: { type: Number, default: 0 },
+  watchedTimestamps: { type: [Number], default: [] },
 });
 
 const StudentSchema = new Schema<IStudent>({

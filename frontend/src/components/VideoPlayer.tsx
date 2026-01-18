@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'framer-motion';
 import { useAnalytics } from '@/contexts/AnalyticsContext';
-import { getVideoStreamUrl, incrementSegmentCount } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { getVideoStreamUrl, updateWatchProgress } from '@/lib/api';
 import { Concept, Lecture, Course, LectureSegment } from '@/types';
 import { Play, Pause, SkipForward, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,10 +20,13 @@ export interface VideoPlayerRef {
 
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, course }, ref) => {
   const { trackEvent, trackRewind } = useAnalytics();
+  const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const previousTimeRef = useRef<number>(0);
   const isPlayingRef = useRef<boolean>(false);
   const lastPlayTimeRef = useRef<number>(0);
+  const lastProgressUpdateRef = useRef<number>(0);
+  const watchedTimestampsRef = useRef<Set<number>>(new Set());
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -225,6 +229,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
       const newTime = videoRef.current.currentTime;
       const previousTime = previousTimeRef.current;
       
+      // Track watched timestamps (round to nearest second for efficiency)
+      const roundedTime = Math.floor(newTime);
+      if (!watchedTimestampsRef.current.has(roundedTime)) {
+        watchedTimestampsRef.current.add(roundedTime);
+      }
+      
       // Detect rewind: current time is less than previous time
       // Only track if there's a meaningful rewind (more than 0.5 seconds to avoid false positives)
       if (previousTime > 0 && newTime < previousTime - 0.5) {
@@ -254,6 +264,34 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
               toConceptName: newConcept?.name,
             }
           );
+        }
+      }
+      
+      // Update watch progress every 5 seconds or when time jumps significantly
+      const timeSinceLastUpdate = newTime - lastProgressUpdateRef.current;
+      if (timeSinceLastUpdate >= 5 || Math.abs(newTime - previousTime) > 2) {
+        if (user && course) {
+          // Send watched timestamps array (convert Set to Array, limit to last 100 for efficiency)
+          const watchedTimestampsArray = Array.from(watchedTimestampsRef.current)
+            .sort((a, b) => a - b)
+            .slice(-100); // Keep last 100 timestamps to avoid large payloads
+          
+          updateWatchProgress(
+            user.id,
+            lecture.id,
+            course.id,
+            lecture.title,
+            newTime,
+            watchedTimestampsArray
+          ).catch(err => {
+            // Silent fail - watch progress updates are non-blocking
+            // Only log in development
+            if (import.meta.env.DEV) {
+              console.debug('Watch progress update failed:', err);
+            }
+          });
+          
+          lastProgressUpdateRef.current = newTime;
         }
       }
       
@@ -416,7 +454,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
           
           <div 
             className="flex-1 relative cursor-pointer"
-            onClick={async (e) => {
+            onClick={(e) => {
               if (videoRef.current && videoDuration > 0) {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const clickX = e.clientX - rect.left;
@@ -428,20 +466,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                   videoRef.current.currentTime = newTime;
                   previousTimeRef.current = newTime;
                   setCurrentTime(newTime);
-                  
-                  // Find which segment the seek time falls into and increment its count
-                  if (lecture?.lectureSegments && lecture.lectureSegments.length > 0 && course) {
-                    const segmentIndex = lecture.lectureSegments.findIndex(
-                      seg => newTime >= seg.start && newTime < seg.end
-                    );
-                    if (segmentIndex !== -1) {
-                      try {
-                        await incrementSegmentCount(course.id, lecture.id, segmentIndex);
-                      } catch (error) {
-                        console.error('Failed to increment segment count:', error);
-                      }
-                    }
-                  }
                   
                   // Track rewind if seeking backwards
                   if (newTime < previousTime && trackRewind && course && lecture) {
@@ -498,7 +522,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                           left: `${segmentStartPercent}%`,
                           width: `${segmentWidth}%`
                         }}
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           // Forward click to progress bar for seeking
                           const progressBarContainer = e.currentTarget.parentElement?.parentElement;
                           if (progressBarContainer && videoRef.current && videoDuration > 0) {
@@ -510,21 +534,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                             videoRef.current.currentTime = newTime;
                             previousTimeRef.current = newTime;
                             setCurrentTime(newTime);
-                            
-                            // Find which segment the seek time falls into and increment its count
-                            if (lecture?.lectureSegments && lecture.lectureSegments.length > 0 && course) {
-                              const segmentIndex = lecture.lectureSegments.findIndex(
-                                seg => newTime >= seg.start && newTime < seg.end
-                              );
-                              if (segmentIndex !== -1) {
-                                try {
-                                  await incrementSegmentCount(course.id, lecture.id, segmentIndex);
-                                } catch (error) {
-                                  console.error('Failed to increment segment count:', error);
-                                }
-                              }
-                            }
-                            
                             trackEvent('seek', lecture.id, undefined, { action: 'segment-seek' });
                           }
                         }}
