@@ -47,6 +47,9 @@ const allowedOrigins = new Set([
   'http://127.0.0.1:5173',
   // Allow Vercel production domain
   'https://hi-ready.vercel.app',
+  // Allow custom domain
+  'https://hiready.tech',
+  'https://www.hiready.tech',
   ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
 ]);
 
@@ -67,8 +70,10 @@ app.use(cors({
       return callback(null, true);
     }
     
-    // Check if origin is the production domain
-    if (origin === 'https://hi-ready.vercel.app') {
+    // Check if origin is the production domain (Vercel or custom)
+    if (origin === 'https://hi-ready.vercel.app' || 
+        origin === 'https://hiready.tech' || 
+        origin === 'https://www.hiready.tech') {
       return callback(null, true);
     }
     
