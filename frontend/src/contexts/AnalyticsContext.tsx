@@ -13,6 +13,8 @@ interface AnalyticsContextType {
     fromConceptName?: string;
     toConceptId?: string;
     toConceptName?: string;
+    segmentIndex?: number;
+    segmentTitle?: string;
   }) => void;
   events: AnalyticsEvent[];
 }
@@ -35,6 +37,8 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       fromConceptName?: string;
       toConceptId?: string;
       toConceptName?: string;
+      segmentIndex?: number;
+      segmentTitle?: string;
     }
   ) => {
     if (!user) return;
@@ -48,6 +52,8 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       fromConceptName: rewindData.fromConceptName,
       toConceptId: rewindData.toConceptId,
       toConceptName: rewindData.toConceptName,
+      segmentIndex: rewindData.segmentIndex,
+      segmentTitle: rewindData.segmentTitle,
       timestamp: Date.now(),
       createdAt: new Date(),
     };
@@ -80,6 +86,8 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           fromConceptName: rewindData.fromConceptName,
           toConceptId: rewindData.toConceptId,
           toConceptName: rewindData.toConceptName,
+          segmentIndex: rewindData.segmentIndex,
+          segmentTitle: rewindData.segmentTitle,
         },
         createdAt: rewindEvent.createdAt,
       };
@@ -100,6 +108,8 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           fromTime: rewindData.fromTime,
           toTime: rewindData.toTime,
           rewindAmount: rewindData.rewindAmount,
+          segmentIndex: rewindData.segmentIndex,
+          segmentTitle: rewindData.segmentTitle,
         },
         createdAt: rewindEvent.createdAt,
       };

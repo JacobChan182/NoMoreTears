@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { motion } from 'framer-motion';
 import { useAnalytics } from '@/contexts/AnalyticsContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { getVideoStreamUrl, updateWatchProgress } from '@/lib/api';
+import { getVideoStreamUrl, updateWatchProgress, incrementSegmentCount } from '@/lib/api';
 import { Concept, Lecture, Course, LectureSegment } from '@/types';
 import { Play, Pause, SkipForward, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,13 +13,14 @@ interface VideoPlayerProps {
   lecture: Lecture;
   course: Course | null;
   disableTracking?: boolean;
+  showDebug?: boolean;
 }
 
 export interface VideoPlayerRef {
   jumpToConcept: (concept: Concept) => void;
 }
 
-const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, course, disableTracking = false }, ref) => {
+const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, course, disableTracking = false, showDebug = false }, ref) => {
   const { trackEvent, trackRewind } = useAnalytics();
   const { user } = useAuth();
   const shouldTrack = !disableTracking && user?.role !== 'instructor';
@@ -37,6 +38,18 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
   const [activeSegment, setActiveSegment] = useState<LectureSegment | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isLoadingStream, setIsLoadingStream] = useState(false);
+
+  const trackSegmentAccess = (time: number) => {
+    if (!lecture?.lectureSegments || !course || !shouldTrack) return;
+    const index = lecture.lectureSegments.findIndex(
+      s => time >= s.start && time < s.end
+    );
+    if (index >= 0) {
+      incrementSegmentCount(course.id, lecture.id, index).catch(() => {
+        // Non-blocking
+      });
+    }
+  };
 
   // Extract video key from videoUrl (videoUrl format: ${PUBLIC_URL}/${key} or R2 endpoint)
   const extractVideoKey = (videoUrl: string): string | null => {
@@ -207,6 +220,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
         const previousConcept = lecture.concepts.find(
           c => previousTime >= c.startTime && previousTime < c.endTime
         );
+        const segmentIndex = lecture.lectureSegments?.findIndex(
+          s => newTime >= s.start && newTime < s.end
+        );
+        const segmentTitle =
+          segmentIndex !== undefined && segmentIndex >= 0
+            ? lecture.lectureSegments?.[segmentIndex]?.title
+            : undefined;
         trackRewind(
           lecture.id,
           lecture.title,
@@ -219,9 +239,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
             fromConceptName: previousConcept?.name,
             toConceptId: concept.id,
             toConceptName: concept.name,
+            segmentIndex: segmentIndex ?? undefined,
+            segmentTitle,
           }
         );
       }
+
+      trackSegmentAccess(newTime);
       
       videoRef.current.currentTime = newTime;
       previousTimeRef.current = newTime;
@@ -277,6 +301,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
               fromConceptName: previousConcept?.name,
               toConceptId: newConcept?.id,
               toConceptName: newConcept?.name,
+              segmentIndex: activeSegment
+                ? lecture.lectureSegments?.findIndex(s => s.title === activeSegment.title)
+                : undefined,
+              segmentTitle: activeSegment?.title,
             }
           );
         }
@@ -491,6 +519,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                     const newConcept = lecture.concepts.find(
                       c => newTime >= c.startTime && newTime < c.endTime
                     );
+                    const segmentIndex = lecture.lectureSegments?.findIndex(
+                      s => newTime >= s.start && newTime < s.end
+                    );
+                    const segmentTitle =
+                      segmentIndex !== undefined && segmentIndex >= 0
+                        ? lecture.lectureSegments?.[segmentIndex]?.title
+                        : undefined;
 
                     trackRewind(
                       lecture.id,
@@ -504,11 +539,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                         fromConceptName: previousConcept?.name,
                         toConceptId: newConcept?.id,
                         toConceptName: newConcept?.name,
+                        segmentIndex: segmentIndex ?? undefined,
+                        segmentTitle,
                       }
                     );
                   }
                   
                   trackEvent('seek', lecture.id, undefined, { action: 'progress-bar-seek' });
+                  trackSegmentAccess(newTime);
                 }
               }
             }}
@@ -568,6 +606,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                               const newConcept = lecture.concepts.find(
                                 c => newTime >= c.startTime && newTime < c.endTime
                               );
+                              const segmentIndex = lecture.lectureSegments?.findIndex(
+                                s => newTime >= s.start && newTime < s.end
+                              );
+                              const segmentTitle =
+                                segmentIndex !== undefined && segmentIndex >= 0
+                                  ? lecture.lectureSegments?.[segmentIndex]?.title
+                                  : undefined;
 
                               trackRewind(
                                 lecture.id,
@@ -581,11 +626,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
                                   fromConceptName: previousConcept?.name,
                                   toConceptId: newConcept?.id,
                                   toConceptName: newConcept?.name,
+                                  segmentIndex: segmentIndex ?? undefined,
+                                  segmentTitle,
                                 }
                               );
                             }
 
                             trackEvent('seek', lecture.id, undefined, { action: 'segment-seek' });
+                            trackSegmentAccess(newTime);
                           }
                         }}
                       >
@@ -607,6 +655,15 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
             {formatTime(currentTime)} / {formatTime(videoDuration)}
           </span>
         </div>
+
+        {showDebug && (
+          <div className="text-xs text-muted-foreground">
+            <span className="font-mono">t={currentTime.toFixed(2)}s</span>
+            {activeSegment?.title && (
+              <span className="ml-2">segment: {activeSegment.title}</span>
+            )}
+          </div>
+        )}
 
         {/* Concept timeline */}
         <div className="flex gap-1 h-2">

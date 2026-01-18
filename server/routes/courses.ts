@@ -444,13 +444,13 @@ router.post('/:courseId/lectures/:lectureId/segments/:segmentIndex/increment', a
       return res.status(400).json({ error: 'Segment index out of range' });
     }
 
-    // Initialize count if it doesn't exist
-    if (segments[segmentIndex].count === undefined) {
-      segments[segmentIndex].count = 0;
+    // Initialize accessCount if it doesn't exist
+    if (segments[segmentIndex].accessCount === undefined) {
+      segments[segmentIndex].accessCount = 0;
     }
 
-    // Increment the count
-    segments[segmentIndex].count = (segments[segmentIndex].count || 0) + 1;
+    // Increment the access count
+    segments[segmentIndex].accessCount = (segments[segmentIndex].accessCount || 0) + 1;
 
     // Update rawAiMetaData
     if (!lecture.rawAiMetaData) {
@@ -466,7 +466,7 @@ router.post('/:courseId/lectures/:lectureId/segments/:segmentIndex/increment', a
       success: true,
       data: {
         segmentIndex,
-        count: segments[segmentIndex].count,
+        count: segments[segmentIndex].accessCount,
       },
     });
   } catch (error: any) {
@@ -480,7 +480,7 @@ router.post('/:courseId/lectures/:lectureId/segments/:segmentIndex/increment', a
           const updatedLecture = updatedCourse.lectures.find(l => l.lectureId === lectureId);
           if (updatedLecture) {
             const updatedSegments = updatedLecture.rawAiMetaData?.segments || [];
-            const newCount = updatedSegments[segmentIndex]?.count || 0;
+            const newCount = updatedSegments[segmentIndex]?.accessCount || 0;
             return res.status(200).json({
               success: true,
               data: {

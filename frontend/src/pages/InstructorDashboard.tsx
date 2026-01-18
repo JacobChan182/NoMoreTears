@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 import { 
   Zap, LogOut, Users, TrendingUp, AlertTriangle, BookOpen, 
-  BarChart2, PieChart as PieIcon, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, ChevronRight, UserCheck
+  BarChart2, PieChart as PieIcon, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, ChevronRight, UserCheck, Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -227,7 +227,6 @@ const InstructorDashboard = () => {
   // Fetch segment rewind counts when selected lecture changes
   useEffect(() => {
     let isMounted = true;
-    let intervalId: number | undefined;
 
     const fetchSegmentRewinds = async () => {
       if (!selectedLecture) {
@@ -252,7 +251,7 @@ const InstructorDashboard = () => {
 
     fetchSegmentRewinds();
 
-    intervalId = window.setInterval(fetchSegmentRewinds, 10000);
+    const intervalId = window.setInterval(fetchSegmentRewinds, 10000);
 
     const handleFocus = () => {
       fetchSegmentRewinds();
@@ -261,7 +260,7 @@ const InstructorDashboard = () => {
 
     return () => {
       isMounted = false;
-      if (intervalId) window.clearInterval(intervalId);
+      window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
   }, [selectedLecture]);
@@ -784,7 +783,23 @@ const InstructorDashboard = () => {
         {/* Instructor Video Preview */}
         <div className="grid lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-2">
-            <VideoPlayer lecture={selectedLecture} course={course} disableTracking />
+            {selectedLecture?.videoUrl && selectedLecture.courseId === course?.id ? (
+              <VideoPlayer lecture={selectedLecture} course={course} disableTracking showDebug />
+            ) : (
+              <Card className="glass-card overflow-hidden">
+                <div className="flex flex-col items-center justify-center h-full min-h-[320px] bg-muted/30">
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center text-muted-foreground">
+                      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                        <Play className="w-8 h-8" />
+                      </div>
+                      <p className="font-medium">No video uploaded</p>
+                      <p className="text-sm">Select a lecture with a video to preview.</p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
           </div>
           <Card className="glass-card">
             <CardHeader>
@@ -879,10 +894,14 @@ const InstructorDashboard = () => {
               </Card>
 
               {(() => {
+                const baseSegments = selectedLecture?.lectureSegments || [];
                 const chartSegments =
                   (segmentRewindData?.segments && segmentRewindData.segments.length > 0)
                     ? segmentRewindData.segments
-                    : (selectedLecture?.lectureSegments || []);
+                    : baseSegments.map(seg => ({
+                        ...seg,
+                        count: 0,
+                      }));
 
                 if (chartSegments.length === 0) {
                   return null;
@@ -893,7 +912,7 @@ const InstructorDashboard = () => {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <BarChart2 className="w-5 h-5 text-primary" />
-                        Segment Rewind Count
+                        Segment Watch Count
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -930,7 +949,7 @@ const InstructorDashboard = () => {
                               const segmentIndex = payload?.index ?? 0;
                               const fullName = payload?.fullName ?? '';
                               return [
-                                `${Number.isFinite(count) ? count : value} rewind${count !== 1 ? 's' : ''}`,
+                                `${Number.isFinite(count) ? count : value} view${count !== 1 ? 's' : ''}`,
                                 `Segment ${segmentIndex + 1}: ${fullName}`,
                               ];
                             }}

@@ -74,6 +74,8 @@ export const trackRewindEvent = async (
     fromConceptName?: string;
     toConceptId?: string;
     toConceptName?: string;
+    segmentIndex?: number;
+    segmentTitle?: string;
     timestamp: number;
     createdAt: Date;
   }

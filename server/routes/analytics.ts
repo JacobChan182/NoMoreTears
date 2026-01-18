@@ -314,36 +314,7 @@ router.get('/lecture/:lectureId/segment-rewinds', async (req: Request, res: Resp
       ? lecture.rawAiMetaData.segments
       : [];
 
-    const counts = new Array(segments.length).fill(0);
-
-    // Pull rewind events from Student records for accuracy
-    const students = await Student.find({ 'lectures.lectureId': lectureId }, { lectures: 1, _id: 0 });
-
-    let totalRewinds = 0;
-
-    students.forEach((student) => {
-      const lectureProgress = student.lectures.find(l => l.lectureId === lectureId);
-      if (!lectureProgress) return;
-
-      (lectureProgress.rewindEvents || []).forEach((event: any) => {
-        const toTime = typeof event?.toTime === 'number' ? event.toTime : null;
-        if (toTime === null) return;
-
-        const idx = segments.findIndex((seg: any) => {
-          const start = typeof seg?.start === 'number' ? seg.start : seg?.startTime || 0;
-          const end = typeof seg?.end === 'number' ? seg.end : seg?.endTime || 0;
-          return toTime >= start && toTime < end;
-        });
-
-        if (idx >= 0) {
-          counts[idx] += 1;
-          totalRewinds += 1;
-        }
-      });
-    });
-
-    const fallbackCounts = segments.map((seg: any) => seg?.count ?? 0);
-    const finalCounts = totalRewinds > 0 ? counts : fallbackCounts;
+    const finalCounts = segments.map((seg: any) => seg?.accessCount ?? 0);
 
     const responseSegments = segments.map((seg: any, index: number) => ({
       start: seg.start ?? seg.startTime ?? 0,
