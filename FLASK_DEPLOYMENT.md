@@ -339,3 +339,140 @@ Railway will automatically:
 - Provide HTTPS URL
 
 Then set `FLASK_BASE_URL` in Vercel environment variables.
+
+---
+
+## Connecting Railway Flask to Vercel Deployment
+
+After deploying Flask to Railway, you need to connect it to your Vercel deployment (frontend + Express).
+
+### Step 1: Get Your Railway Flask URL
+
+After deploying on Railway, you'll get a URL like:
+```
+https://your-app-name.up.railway.app
+```
+
+Test it works:
+```bash
+curl https://your-app-name.up.railway.app/health
+# Should return: {"status":"ok","server":"Flask"}
+```
+
+### Step 2: Set Environment Variables in Vercel
+
+Go to **Vercel Dashboard** → Your Project → **Settings** → **Environment Variables**
+
+Add these variables:
+
+#### For Express Backend (serverless functions):
+```
+FLASK_BASE_URL=https://your-app-name.up.railway.app
+```
+
+This tells Express where to send video upload/indexing requests.
+
+#### For Frontend (built at build time):
+```
+VITE_BACKEND_URL=https://your-app-name.up.railway.app/api
+```
+
+This tells the frontend where to send chat API requests directly to Flask.
+
+**Important:** 
+- `FLASK_BASE_URL` is used by Express serverless functions (runtime)
+- `VITE_BACKEND_URL` is embedded in the frontend build (build time)
+- Both should point to your Railway Flask URL
+
+### Step 3: Configure CORS on Flask
+
+Make sure Flask allows requests from your Vercel domain. In `backend/app.py`, Flask already has `CORS(app)` which allows all origins. For production, you might want to restrict this:
+
+```python
+from flask_cors import CORS
+
+# Allow specific origins in production
+allowed_origins = [
+    'https://your-vercel-app.vercel.app',
+    'https://your-custom-domain.com'
+]
+
+if os.getenv('FLASK_ENV') == 'production':
+    CORS(app, origins=allowed_origins)
+else:
+    CORS(app)  # Allow all in development
+```
+
+Or set it via environment variable:
+```python
+allowed_origins = os.getenv('CORS_ORIGINS', '*').split(',')
+CORS(app, origins=allowed_origins if '*' not in allowed_origins else None)
+```
+
+### Step 4: Redeploy Vercel
+
+After setting environment variables:
+
+1. **Redeploy** your Vercel project to pick up the new `VITE_BACKEND_URL`
+   - Go to **Deployments** → Click **...** → **Redeploy**
+   - Or push a new commit to trigger a redeploy
+
+2. **Verify** the connection:
+   - Open your Vercel app
+   - Check browser console for any CORS errors
+   - Test chat functionality (uses `VITE_BACKEND_URL`)
+   - Test video upload (Express uses `FLASK_BASE_URL`)
+
+### Step 5: Test the Connection
+
+#### Test Frontend → Flask (Chat API):
+```javascript
+// In browser console on your Vercel app
+fetch(`${import.meta.env.VITE_BACKEND_URL}/backboard/chat`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    user_id: 'test-123',
+    user_role: 'student',
+    message: 'Hello'
+  })
+})
+.then(r => r.json())
+.then(console.log)
+```
+
+#### Test Express → Flask (Video Upload):
+Express should automatically use `FLASK_BASE_URL` when handling video uploads.
+
+### Architecture Overview
+
+```
+┌─────────────────┐         ┌──────────────────┐
+│   Vercel (CDN)  │         │  Vercel Serverless│
+│                 │         │   (Express API)   │
+│  React Frontend │────────▶│   /api/upload     │────────▶┌──────────────┐
+│                 │         │                   │         │              │
+│  Chat API ──────┼─────────┼───────────────────┼────────▶│ Railway Flask│
+│  (direct)       │         │                   │         │              │
+└─────────────────┘         └───────────────────┘         └──────────────┘
+```
+
+- **Frontend → Flask**: Direct calls using `VITE_BACKEND_URL` (for chat)
+- **Frontend → Express**: Calls to `/api/*` routes (handled by Vercel serverless functions)
+- **Express → Flask**: Calls using `FLASK_BASE_URL` (for video indexing)
+
+### Troubleshooting
+
+**Error: CORS policy blocked**
+- Check Flask CORS configuration allows your Vercel domain
+- Verify `CORS_ORIGINS` environment variable in Railway
+
+**Error: Cannot reach Flask**
+- Verify `FLASK_BASE_URL` is set correctly in Vercel
+- Test Railway URL directly: `curl https://your-app.up.railway.app/health`
+- Check Railway logs for errors
+
+**Error: Chat not working**
+- Verify `VITE_BACKEND_URL` is set in Vercel
+- Redeploy Vercel after setting `VITE_BACKEND_URL` (build-time variable)
+- Check browser console for API errors
