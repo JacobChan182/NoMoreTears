@@ -117,11 +117,12 @@ router.post('/signin', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Map old role values for comparison
-    const userRole = user.role === 'employee' ? 'student' : user.role === 'trainer' ? 'instructor' : user.role;
-    
     // Validate that the user's role matches the requested role
-    if (userRole !== role) {
+    // Handle potential old role values from database (employee/trainer) by comparing as strings
+    const userRoleStr = String(user.role);
+    const normalizedUserRole = (userRoleStr === 'employee' ? 'student' : userRoleStr === 'trainer' ? 'instructor' : userRoleStr) as 'student' | 'instructor';
+    
+    if (normalizedUserRole !== role) {
       return res.status(403).json({ 
         error: `This account is registered as ${user.role}. Please select the correct role.` 
       });
@@ -129,8 +130,9 @@ router.post('/signin', async (req: Request, res: Response) => {
 
     // Track signin event
     try {
-      // Map old role values to new ones for Login tracking
-      const loginRole = user.role === 'employee' ? 'student' : user.role === 'trainer' ? 'instructor' : user.role;
+      // Map old role values to new ones for Login tracking (handle any string value)
+      const loginRoleStr = String(user.role);
+      const loginRole = (loginRoleStr === 'employee' ? 'student' : loginRoleStr === 'trainer' ? 'instructor' : loginRoleStr) as 'student' | 'instructor';
       
       const loginEvent = new Login({
         userId: user._id.toString(),
