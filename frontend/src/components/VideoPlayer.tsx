@@ -117,6 +117,19 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
     }
   }, [lecture?.id]);
 
+  // Force reload video element when source changes
+  useEffect(() => {
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+        videoRef.current.load();
+      } catch (error) {
+        console.warn('Failed to reload video element:', error);
+      }
+      setIsPlaying(false);
+    }
+  }, [streamUrl, lecture?.videoUrl, lecture?.id]);
+
   // Track current concept based on video time
   useEffect(() => {
     if (lecture) {
@@ -319,6 +332,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ lecture, cou
           </div>
         ) : (
           <video
+            key={`${lecture.id}-${streamUrl || lecture.videoUrl || ''}`}
             ref={videoRef}
             src={streamUrl || lecture.videoUrl}
             className="w-full h-full object-contain"
