@@ -271,4 +271,45 @@ router.get('/lecture/:lectureId/watch-progress', async (req: Request, res: Respo
   }
 });
 
+// Get segment rewind counts for a lecture (for instructor view)
+router.get('/lecture/:lectureId/segment-rewinds', async (req: Request, res: Response) => {
+  try {
+    const lectureId = Array.isArray(req.params.lectureId)
+      ? req.params.lectureId[0]
+      : req.params.lectureId;
+
+    const course = await Course.findOne({ 'lectures.lectureId': lectureId });
+    const lecture = course?.lectures.find(l => l.lectureId === lectureId);
+
+    if (!course || !lecture) {
+      return res.status(404).json({ error: 'Lecture not found' });
+    }
+
+    const segments = Array.isArray(lecture.rawAiMetaData?.segments)
+      ? lecture.rawAiMetaData.segments
+      : [];
+
+    const finalCounts = segments.map((seg: any) => seg?.accessCount ?? 0);
+
+    const responseSegments = segments.map((seg: any, index: number) => ({
+      start: seg.start ?? seg.startTime ?? 0,
+      end: seg.end ?? seg.endTime ?? 0,
+      title: seg.title ?? seg.name ?? 'Untitled Segment',
+      summary: seg.summary ?? '',
+      count: finalCounts[index] || 0,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        lectureId,
+        segments: responseSegments,
+      },
+    });
+  } catch (error) {
+    console.error('Error getting segment rewinds:', error);
+    res.status(500).json({ error: 'Failed to get segment rewinds' });
+  }
+});
+
 export default router;

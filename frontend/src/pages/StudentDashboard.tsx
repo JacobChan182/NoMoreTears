@@ -38,6 +38,67 @@ interface LectureWithMeta extends Lecture {
   _id?: string;
 }
 
+type LearningArchetypeScores = {
+  achieverDreamer: number;
+  helperMediator: number;
+  analystInvestigator: number;
+  championPersuader: number;
+  individualist: number;
+  problemSolverDetective: number;
+  challengerDebater: number;
+};
+
+const defaultLearningArchetypeScores: LearningArchetypeScores = {
+  achieverDreamer: 0,
+  helperMediator: 0,
+  analystInvestigator: 0,
+  championPersuader: 0,
+  individualist: 0,
+  problemSolverDetective: 0,
+  challengerDebater: 0,
+};
+
+const getLearningArchetypeStorageKey = (userId: string) =>
+  `learningArchetypeScores:${userId}`;
+const getLearningArchetypeCompletedKey = (userId: string) =>
+  `learningArchetypeCompleted:${userId}`;
+
+const loadLearningArchetypeScores = (userId?: string): LearningArchetypeScores => {
+  if (typeof window === 'undefined') {
+    return defaultLearningArchetypeScores;
+  }
+
+  if (!userId) return defaultLearningArchetypeScores;
+
+  try {
+    const stored = localStorage.getItem(getLearningArchetypeStorageKey(userId));
+    if (!stored) return defaultLearningArchetypeScores;
+    const parsed = JSON.parse(stored) as Partial<LearningArchetypeScores>;
+    return {
+      ...defaultLearningArchetypeScores,
+      achieverDreamer: Number(parsed.achieverDreamer ?? defaultLearningArchetypeScores.achieverDreamer),
+      helperMediator: Number(parsed.helperMediator ?? defaultLearningArchetypeScores.helperMediator),
+      analystInvestigator: Number(parsed.analystInvestigator ?? defaultLearningArchetypeScores.analystInvestigator),
+      championPersuader: Number(parsed.championPersuader ?? defaultLearningArchetypeScores.championPersuader),
+      individualist: Number(parsed.individualist ?? defaultLearningArchetypeScores.individualist),
+      problemSolverDetective: Number(parsed.problemSolverDetective ?? defaultLearningArchetypeScores.problemSolverDetective),
+      challengerDebater: Number(parsed.challengerDebater ?? defaultLearningArchetypeScores.challengerDebater),
+    };
+  } catch {
+    return defaultLearningArchetypeScores;
+  }
+};
+
+const loadLearningArchetypeCompleted = (userId?: string): boolean => {
+  if (typeof window === 'undefined') return false;
+  if (!userId) return false;
+  try {
+    return localStorage.getItem(getLearningArchetypeCompletedKey(userId)) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 const getLectureId = (lecture: LectureWithMeta): string | undefined =>
   lecture.lectureId ?? lecture.id ?? lecture._id;
 
@@ -56,44 +117,39 @@ const StudentDashboard = () => {
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [generatedQuiz, setGeneratedQuiz] = useState<QuizContent | null>(null);
 
-  // TODO: Replace with actual assessment/quiz scores from your teammate's implementation
-  // Placeholder worker personality scores (0-100 for each type)
-  const [workerPersonality] = useState({
-    achieverDreamer: 75,      // Replace with actual quiz score
-    helperMediator: 60,       // Replace with actual quiz score
-    analystInvestigator: 85,  // Replace with actual quiz score
-    championPersuader: 45,    // Replace with actual quiz score
-    individualist: 55,        // Replace with actual quiz score
-    problemSolverDetective: 70, // Replace with actual quiz score
-    challengerDebater: 50,    // Replace with actual quiz score
-  });
+  const [learningArchetypeScores, setLearningArchetypeScores] = useState<LearningArchetypeScores>(
+    () => loadLearningArchetypeScores(user?.id)
+  );
+  const [hasCompletedLearningQuiz, setHasCompletedLearningQuiz] = useState<boolean>(
+    () => loadLearningArchetypeCompleted(user?.id)
+  );
 
   // Calculate percentages for pie chart
-  const workerTypes = [
-    { name: 'Achiever/Dreamer', score: workerPersonality.achieverDreamer, color: '#3b82f6' },
-    { name: 'Helper/Mediator', score: workerPersonality.helperMediator, color: '#10b981' },
-    { name: 'Analyst/Investigator', score: workerPersonality.analystInvestigator, color: '#8b5cf6' },
-    { name: 'Champion/Persuader', score: workerPersonality.championPersuader, color: '#f59e0b' },
-    { name: 'Individualist', score: workerPersonality.individualist, color: '#ec4899' },
-    { name: 'Problem Solver/Detective', score: workerPersonality.problemSolverDetective, color: '#06b6d4' },
-    { name: 'Challenger/Debater', score: workerPersonality.challengerDebater, color: '#ef4444' },
+  const learningTypes = [
+    { name: 'Achiever/Dreamer', score: learningArchetypeScores.achieverDreamer, color: '#3b82f6' },
+    { name: 'Helper/Mediator', score: learningArchetypeScores.helperMediator, color: '#10b981' },
+    { name: 'Analyst/Investigator', score: learningArchetypeScores.analystInvestigator, color: '#8b5cf6' },
+    { name: 'Champion/Persuader', score: learningArchetypeScores.championPersuader, color: '#f59e0b' },
+    { name: 'Individualist', score: learningArchetypeScores.individualist, color: '#ec4899' },
+    { name: 'Problem Solver/Detective', score: learningArchetypeScores.problemSolverDetective, color: '#06b6d4' },
+    { name: 'Challenger/Debater', score: learningArchetypeScores.challengerDebater, color: '#ef4444' },
   ];
 
-  const totalScore = workerTypes.reduce((sum, type) => sum + type.score, 0);
-  const workerTypesWithPercentages = workerTypes.map(type => ({
+  const totalScore = learningTypes.reduce((sum, type) => sum + type.score, 0);
+  const learningTypesWithPercentages = learningTypes.map(type => ({
     ...type,
     percentage: totalScore > 0 ? (type.score / totalScore) * 100 : 0,
   }));
 
   // Get dominant worker type
-  const dominantType = workerTypesWithPercentages.reduce((prev, current) => 
+  const dominantType = learningTypesWithPercentages.reduce((prev, current) => 
     current.percentage > prev.percentage ? current : prev
   );
 
   // Generate pie chart paths
   const generatePieChart = () => {
     let cumulativePercentage = 0;
-    return workerTypesWithPercentages.map((type) => {
+    return learningTypesWithPercentages.map((type) => {
       const startAngle = (cumulativePercentage / 100) * 360;
       cumulativePercentage += type.percentage;
       const endAngle = (cumulativePercentage / 100) * 360;
@@ -116,6 +172,34 @@ const StudentDashboard = () => {
   };
 
   const pieChartData = generatePieChart();
+
+  useEffect(() => {
+    if (!user?.id) {
+      setLearningArchetypeScores(defaultLearningArchetypeScores);
+      setHasCompletedLearningQuiz(false);
+      return;
+    }
+
+    setLearningArchetypeScores(loadLearningArchetypeScores(user.id));
+    setHasCompletedLearningQuiz(loadLearningArchetypeCompleted(user.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    const handleUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<LearningArchetypeScores>;
+      if (!customEvent.detail) return;
+      setLearningArchetypeScores({
+        ...defaultLearningArchetypeScores,
+        ...customEvent.detail,
+      });
+      setHasCompletedLearningQuiz(true);
+    };
+
+    window.addEventListener('learning-archetype-updated', handleUpdated as EventListener);
+    return () => {
+      window.removeEventListener('learning-archetype-updated', handleUpdated as EventListener);
+    };
+  }, []);
 
   // Fetch student courses and lectures from API
   useEffect(() => {
@@ -626,62 +710,77 @@ const StudentDashboard = () => {
 
             {/* Sidebar */}
             <div className="space-y-4">
-              {/* Worker Personality Section */}
+              {/* Learning Archetype Section */}
               <Card className="glass-card p-4">
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-primary" />
-                  What Kind of Worker Are You?
+                  What Kind of Learner Are You?
                 </h3>
                 
-                {/* Pie Chart */}
-                <div className="flex items-center justify-center mb-4">
-                  <svg viewBox="0 0 100 100" className="w-48 h-48">
-                    {pieChartData.map((slice, index) => (
-                      <motion.path
-                        key={slice.name}
-                        d={slice.path}
-                        fill={slice.color}
-                        initial={{ opacity: 0, scale: 0 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.1 }}
-                        className="cursor-pointer hover:opacity-80 transition-opacity"
-                      />
-                    ))}
-                  </svg>
-                </div>
-
-                {/* Dominant Type */}
-                <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: `${dominantType.color}15` }}>
-                  <p className="text-xs text-muted-foreground mb-1">Your Dominant Type</p>
-                  <p className="font-semibold" style={{ color: dominantType.color }}>
-                    {dominantType.name}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {dominantType.percentage.toFixed(1)}% of your profile
-                  </p>
-                </div>
-
-                {/* Legend */}
-                <div className="space-y-2">
-                  {workerTypesWithPercentages
-                    .sort((a, b) => b.percentage - a.percentage)
-                    .map((type) => (
-                      <div key={type.name} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <div 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ backgroundColor: type.color }}
+                {hasCompletedLearningQuiz ? (
+                  <>
+                    {/* Pie Chart */}
+                    <div className="flex items-center justify-center mb-4">
+                      <svg viewBox="0 0 100 100" className="w-48 h-48">
+                        {pieChartData.map((slice, index) => (
+                          <motion.path
+                            key={slice.name}
+                            d={slice.path}
+                            fill={slice.color}
+                            initial={{ opacity: 0, scale: 0 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: index * 0.1 }}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
                           />
-                          <span className="text-muted-foreground">{type.name}</span>
-                        </div>
-                        <span className="font-mono font-medium">{type.percentage.toFixed(1)}%</span>
-                      </div>
-                    ))}
-                </div>
+                        ))}
+                      </svg>
+                    </div>
 
-                <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
-                  Based on your assessment results. Complete more quizzes to refine your profile.
-                </p>
+                    {/* Dominant Type */}
+                    <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: `${dominantType.color}15` }}>
+                      <p className="text-xs text-muted-foreground mb-1">Your Dominant Archetype</p>
+                      <p className="font-semibold" style={{ color: dominantType.color }}>
+                        {dominantType.name}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {dominantType.percentage.toFixed(1)}% of your profile
+                      </p>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="space-y-2">
+                      {learningTypesWithPercentages
+                        .sort((a, b) => b.percentage - a.percentage)
+                        .map((type) => (
+                          <div key={type.name} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: type.color }}
+                              />
+                              <span className="text-muted-foreground">{type.name}</span>
+                            </div>
+                            <span className="font-mono font-medium">{type.percentage.toFixed(1)}%</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
+                      Based on your assessment results. Complete more quizzes to refine your profile.
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex items-center justify-center">
+                      <svg viewBox="0 0 100 100" className="w-48 h-48">
+                        <circle cx="50" cy="50" r="45" fill="#e5e7eb" />
+                      </svg>
+                    </div>
+                    <div className="w-full rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 p-4 text-sm text-muted-foreground text-center">
+                      Run the quiz by typing “worker archetype” in the chatbox to reveal your learning archetype profile.
+                    </div>
+                  </div>
+                )}
               </Card>
 
               {/* Concept Search */}

@@ -73,13 +73,43 @@ router.post('/signup', async (req: Request, res: Response) => {
     };
 
     // Set HTTP-only cookie with user ID
-    res.cookie('userId', newUser._id.toString(), {
+    // On Vercel (HTTPS), always use secure=true. For local dev (HTTP), use secure=false
+    const isVercel = process.env.VERCEL === '1';
+    const isLocalDev = !isVercel && process.env.NODE_ENV !== 'production';
+    
+    // For Vercel (HTTPS), use sameSite: 'none' with secure: true to ensure cookies work
+    // For local dev (HTTP), use sameSite: 'lax' with secure: false
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: !isLocalDev, // true on Vercel (HTTPS), false on local (HTTP)
+      sameSite: (!isLocalDev ? 'none' : 'lax') as 'none' | 'lax', // 'none' for HTTPS, 'lax' for HTTP
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/',
-    });
+      // Don't set domain explicitly - browser will set it based on request origin
+    };
+    
+    // Debug logging on Vercel
+    if (isVercel) {
+      console.log('[auth/signup] Setting cookie:', {
+        userId: newUser._id.toString(),
+        options: cookieOptions,
+        origin: req.headers.origin,
+        host: req.headers.host,
+        referer: req.headers.referer,
+      });
+    }
+    
+    res.cookie('userId', newUser._id.toString(), cookieOptions);
+
+    // Debug: Log Set-Cookie header after setting
+    if (isVercel) {
+      const setCookieHeader = res.getHeader('Set-Cookie');
+      console.log('[auth/signup] Set-Cookie header:', setCookieHeader);
+      console.log('[auth/signup] Response headers:', {
+        'set-cookie': res.getHeaders()['set-cookie'],
+        'content-type': res.getHeader('content-type'),
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -161,13 +191,43 @@ router.post('/signin', async (req: Request, res: Response) => {
     };
 
     // Set HTTP-only cookie with user ID
-    res.cookie('userId', user._id.toString(), {
+    // On Vercel (HTTPS), always use secure=true. For local dev (HTTP), use secure=false
+    const isVercel = process.env.VERCEL === '1';
+    const isLocalDev = !isVercel && process.env.NODE_ENV !== 'production';
+    
+    // For Vercel (HTTPS), use sameSite: 'none' with secure: true to ensure cookies work
+    // For local dev (HTTP), use sameSite: 'lax' with secure: false
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: !isLocalDev, // true on Vercel (HTTPS), false on local (HTTP)
+      sameSite: (!isLocalDev ? 'none' : 'lax') as 'none' | 'lax', // 'none' for HTTPS, 'lax' for HTTP
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: '/',
-    });
+      // Don't set domain explicitly - browser will set it based on request origin
+    };
+    
+    // Debug logging on Vercel
+    if (isVercel) {
+      console.log('[auth/signin] Setting cookie:', {
+        userId: user._id.toString(),
+        options: cookieOptions,
+        origin: req.headers.origin,
+        host: req.headers.host,
+        referer: req.headers.referer,
+      });
+    }
+    
+    res.cookie('userId', user._id.toString(), cookieOptions);
+
+    // Debug: Log Set-Cookie header after setting
+    if (isVercel) {
+      const setCookieHeader = res.getHeader('Set-Cookie');
+      console.log('[auth/signin] Set-Cookie header:', setCookieHeader);
+      console.log('[auth/signin] Response headers:', {
+        'set-cookie': res.getHeaders()['set-cookie'],
+        'content-type': res.getHeader('content-type'),
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -183,17 +243,34 @@ router.post('/signin', async (req: Request, res: Response) => {
 // Get current user from session cookie
 router.get('/me', async (req: Request, res: Response) => {
   try {
+    // Debug: Log cookie information (only on Vercel)
+    if (process.env.VERCEL === '1') {
+      console.log('[auth/me] Cookies object:', req.cookies);
+      console.log('[auth/me] Cookie header:', req.headers.cookie);
+      console.log('[auth/me] VERCEL env:', process.env.VERCEL);
+    }
+    
     const userId = req.cookies?.userId;
 
     if (!userId) {
+      if (process.env.VERCEL === '1') {
+        console.log('[auth/me] No userId cookie found. Available cookies:', Object.keys(req.cookies || {}));
+      }
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
     // Find user by ID
     const user = await User.findById(userId);
     if (!user) {
-      // Clear invalid cookie
-      res.clearCookie('userId', { path: '/' });
+      // Clear invalid cookie (must match cookie options)
+      const isVercel = process.env.VERCEL === '1';
+      const isLocalDev = !isVercel && process.env.NODE_ENV !== 'production';
+      res.clearCookie('userId', { 
+        httpOnly: true,
+        secure: !isLocalDev,
+        sameSite: (!isLocalDev ? 'none' : 'lax') as 'none' | 'lax',
+        path: '/' 
+      });
       return res.status(401).json({ error: 'User not found' });
     }
 
@@ -220,7 +297,15 @@ router.get('/me', async (req: Request, res: Response) => {
 
 // Logout - clear cookie
 router.post('/logout', async (req: Request, res: Response) => {
-  res.clearCookie('userId', { path: '/' });
+  // Must match cookie options when clearing
+  const isVercel = process.env.VERCEL === '1';
+  const isLocalDev = !isVercel && process.env.NODE_ENV !== 'production';
+  res.clearCookie('userId', { 
+    httpOnly: true,
+    secure: !isLocalDev,
+    sameSite: (!isLocalDev ? 'none' : 'lax') as 'none' | 'lax',
+    path: '/' 
+  });
   res.status(200).json({ success: true, message: 'Logged out successfully' });
 });
 

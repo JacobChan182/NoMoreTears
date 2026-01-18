@@ -2,16 +2,17 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { mockLectures, mockCourses, calculateConceptInsights, calculateClusterInsights, mockStudents, transformInstructorLectures, enrichLecturesWithMockData } from '@/data/mockData';
+import { sendChatMessage } from '@/lib/api';
 import { getInstructorLectures, createCourse, updateCourse, getCourseStudents, addStudentsToCourse, removeStudentFromCourse, getLectureWatchProgress, getLectureSegmentRewinds } from '@/lib/api';
 import { Lecture } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  AreaChart, Area, PieChart, Pie, Cell, Legend
+  AreaChart, Area, Legend
 } from 'recharts';
 import { 
   Zap, LogOut, Users, TrendingUp, AlertTriangle, BookOpen, 
-  BarChart2, PieChart as PieIcon, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, ChevronRight, UserCheck
+  BarChart2, Activity, Shield, Eye, Plus, ArrowRight, Settings, X, Save, ChevronDown, ChevronRight, Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,6 +92,7 @@ const InstructorDashboard = () => {
     segments: Array<{ start: number; end: number; title: string; summary: string; count?: number }>;
   } | null>(null);
   const [isLoadingWatchProgress, setIsLoadingWatchProgress] = useState(false);
+  const [showAllFrictionPoints, setShowAllFrictionPoints] = useState(false);
 
   // TODO: Replace with actual worker personality data from assessments/quizzes
   // Mock data for employee worker personality distribution
@@ -601,7 +603,118 @@ const InstructorDashboard = () => {
         })
       : [];
 
-  const topStrugglingConcepts = conceptInsights.slice(0, 3);
+  interface AiFrictionSegment {
+    segmentId: string;
+    name: string;
+    frictionScore: number;
+    reason?: string;
+  }
+  const [aiFrictionSegments, setAiFrictionSegments] = useState<AiFrictionSegment[]>([]);
+  // Local fallback friction calculation
+  const localFrictionSegments = useMemo(() => {
+    const segments = segmentRewindData?.segments ?? [];
+    if (segments.length === 0) return [];
+    const retentionData = watchProgressData?.retentionData ?? [];
+    const getRetentionAt = (time: number) => {
+      if (retentionData.length === 0) return 0;
+      let closest = retentionData[0];
+      for (const point of retentionData) {
+        if (Math.abs(point.time - time) < Math.abs(closest.time - time)) {
+          closest = point;
+        }
+      }
+      return closest.retention ?? 0;
+    };
+    const perSegment = segments.map((seg, index) => {
+      const start = seg.start ?? 0;
+      const end = seg.end ?? start;
+      const length = Math.max(1, end - start);
+      const views = seg.count ?? 0;
+      const viewsPerMinute = views / (length / 60);
+      const startRetention = getRetentionAt(start);
+      const endRetention = getRetentionAt(end);
+      const dropoffRate = Math.max(0, (startRetention - endRetention) / 100);
+      return {
+        segmentId: `${start}-${end}-${index}`,
+        name: seg.title || `Segment ${index + 1}`,
+        frictionScore: 0, // will be set below
+        views,
+        viewsPerMinute,
+        dropoffRate,
+        reason: undefined,
+      };
+    });
+    const maxViewsPerMinute = Math.max(...perSegment.map((seg) => seg.viewsPerMinute), 1);
+    const allDropoffZero = perSegment.every(seg => seg.dropoffRate === 0);
+    return perSegment
+      .map((seg) => {
+        const normalizedViews = seg.viewsPerMinute / maxViewsPerMinute;
+        let score;
+        if (allDropoffZero) {
+          score = normalizedViews * 100;
+        } else {
+          score = (0.2 * seg.dropoffRate + 0.8 * normalizedViews) * 100;
+        }
+        return {
+          ...seg,
+          frictionScore: Math.round(score),
+          reason: allDropoffZero
+            ? 'Ranked by normalized views per minute (no drop-off detected)'
+            : 'Weighted by drop-off and normalized views per minute',
+        };
+      })
+      .sort((a, b) => b.frictionScore - a.frictionScore);
+  }, [segmentRewindData, watchProgressData]);
+
+  const frictionDataKey = JSON.stringify({
+    segments: segmentRewindData?.segments ?? [],
+    retentionData: watchProgressData?.retentionData ?? [],
+  });
+
+  const [isFrictionLoading, setIsFrictionLoading] = useState(false);
+  useEffect(() => {
+    setIsFrictionLoading(true);
+    const timeout = setTimeout(() => {
+      const segments = segmentRewindData?.segments ?? [];
+      const retentionData = watchProgressData?.retentionData ?? [];
+      console.debug('[Friction AI Effect] segments:', segments, 'retentionData:', retentionData);
+      if (segments.length === 0) {
+        setAiFrictionSegments([]);
+        setIsFrictionLoading(false);
+        return;
+      }
+      const payload = {
+        segments,
+        retentionData,
+      };
+      const prompt = `You are an expert in learning analytics. Given the following video segment data and retention curve, rank the segments from hardest to easiest for students. For each segment, output a JSON array of objects with: segmentId, name, frictionScore (0-100, higher is harder), and a short reason. Use all available data and statistical analysis. Data: ${JSON.stringify(payload)}`;
+      sendChatMessage('instructor-ai', prompt, undefined, undefined, undefined, 'auto', 'instructor').then((result) => {
+        let fallback = true;
+        if (result?.response) {
+          try {
+            const parsed = JSON.parse(result.response);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setAiFrictionSegments(parsed);
+              fallback = false;
+            }
+          } catch (err) {
+            // ignore parse errors
+          }
+        }
+        if (fallback) {
+          setAiFrictionSegments(localFrictionSegments);
+        }
+        setIsFrictionLoading(false);
+      });
+    }, 1000); // 1 second debounce
+    return () => clearTimeout(timeout);
+  }, [frictionDataKey]);
+
+  const frictionList = aiFrictionSegments.length > 0 ? aiFrictionSegments : [];
+  const topStrugglingConcepts = frictionList.slice(0, 3);
+  const displayedStrugglingConcepts = showAllFrictionPoints
+    ? frictionList
+    : topStrugglingConcepts;
 
   return (
     <div className="min-h-screen bg-background">
@@ -759,7 +872,7 @@ const InstructorDashboard = () => {
           {[
             { icon: Users, label: 'Total Employees', value: mockStudents.length, color: 'text-primary' },
             { icon: Eye, label: 'Avg. Watch Rate', value: '78%', color: 'text-chart-3' },
-            { icon: AlertTriangle, label: 'Friction Points', value: topStrugglingConcepts.length, color: 'text-destructive' },
+            { icon: AlertTriangle, label: 'Friction Points', value: aiFrictionSegments.length, color: 'text-destructive' },
             { icon: Activity, label: 'Engagement Score', value: '82/100', color: 'text-chart-2' },
           ].map((stat, i) => (
             <motion.div
@@ -788,38 +901,72 @@ const InstructorDashboard = () => {
           <div className="lg:col-span-2">
             <VideoPlayer lecture={selectedLecture} course={course} disableTracking />
           </div>
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-destructive" />
-                Friction Points
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {topStrugglingConcepts.map((concept, i) => (
-                <motion.div
-                  key={concept.conceptId}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="p-4 rounded-lg bg-muted/50"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-sm">{concept.conceptName}</span>
-                    <Badge 
-                      variant={concept.struggleScore > 60 ? 'destructive' : 'secondary'}
-                    >
-                      {Math.round(concept.struggleScore)}% struggle
-                    </Badge>
+          <div style={{ position: 'relative' }}>
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                  Friction Points Ranking
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {displayedStrugglingConcepts.map((concept, i) => (
+                  <motion.div
+                    key={concept.segmentId}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="p-4 rounded-lg bg-muted/50"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-sm">#{i + 1} {concept.name}</span>
+                      <Badge 
+                        variant={concept.frictionScore > 60 ? 'destructive' : 'secondary'}
+                      >
+                        {Math.round(concept.frictionScore)}% friction
+                      </Badge>
+                    </div>
+                    {concept.reason && (
+                      <div className="text-xs text-muted-foreground mb-1">{concept.reason}</div>
+                    )}
+                  </motion.div>
+                ))}
+                {displayedStrugglingConcepts.length === 0 && !isFrictionLoading && (
+                  <div className="text-sm text-muted-foreground text-center py-6">
+                    No friction data available yet.
                   </div>
-                  <div className="flex gap-4 text-xs text-muted-foreground">
-                    <span>{concept.replayCount} replays</span>
-                    <span>{concept.dropOffCount} drop-offs</span>
-                  </div>
-                </motion.div>
-              ))}
-            </CardContent>
-          </Card>
+                )}
+                {aiFrictionSegments.length > 3 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowAllFrictionPoints((prev) => !prev)}
+                  >
+                    {showAllFrictionPoints ? 'Show top 3' : `Show all ${aiFrictionSegments.length}`}
+                  </Button>
+                )}
+              </CardContent>
+              {isFrictionLoading && (
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  background: 'rgba(200,200,200,0.5)',
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 'inherit',
+                }}>
+                  <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
 
         {/* Main Analytics */}
@@ -833,53 +980,11 @@ const InstructorDashboard = () => {
               <Activity className="w-4 h-4" />
               Timeline View
             </TabsTrigger>
-            <TabsTrigger value="clusters" className="flex items-center gap-2">
-              <PieIcon className="w-4 h-4" />
-              Behavioral Clusters
-            </TabsTrigger>
-            <TabsTrigger value="worker-types" className="flex items-center gap-2">
-              <UserCheck className="w-4 h-4" />
-              Worker Types
-            </TabsTrigger>
           </TabsList>
 
           {/* Concept Analysis Tab */}
           <TabsContent value="concepts" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-destructive" />
-                    Most Misunderstood Concepts
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={struggleChartData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis type="number" stroke="hsl(var(--muted-foreground))" />
-                      <YAxis 
-                        type="category" 
-                        dataKey="name" 
-                        width={120}
-                        stroke="hsl(var(--muted-foreground))"
-                        tick={{ fontSize: 12 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                        labelFormatter={(_, payload) => payload[0]?.payload?.fullName}
-                      />
-                      <Bar dataKey="replays" fill={CHART_COLORS[0]} name="Replays" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="dropOffs" fill={CHART_COLORS[3]} name="Drop-offs" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
               {(() => {
                 const chartSegments =
                   (segmentRewindData?.segments && segmentRewindData.segments.length > 0)
@@ -891,7 +996,7 @@ const InstructorDashboard = () => {
                 }
 
                 return (
-                  <Card className="glass-card">
+                  <Card className="glass-card lg:col-span-2">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <BarChart2 className="w-5 h-5 text-primary" />
@@ -899,7 +1004,7 @@ const InstructorDashboard = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={350}>
+                      <ResponsiveContainer width="100%" height={420}>
                         <BarChart data={chartSegments.map((seg, index) => {
                           const count = seg.count ?? 0;
                           return {
@@ -919,7 +1024,12 @@ const InstructorDashboard = () => {
                             textAnchor="end"
                             height={100}
                           />
-                          <YAxis stroke="hsl(var(--muted-foreground))" />
+                          <YAxis
+                            stroke="hsl(var(--muted-foreground))"
+                            domain={[0, 'dataMax + 1']}
+                            allowDecimals={false}
+                            tickCount={6}
+                          />
                           <Tooltip
                             contentStyle={{
                               backgroundColor: 'hsl(var(--card))',
@@ -988,298 +1098,6 @@ const InstructorDashboard = () => {
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Clusters Tab */}
-          <TabsContent value="clusters" className="space-y-6">
-            <div className="grid lg:grid-cols-2 gap-6">
-              {/* Cluster Distribution Pie */}
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="w-5 h-5 text-primary" />
-                    Behavioral Cluster Distribution
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={clusterPieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {clusterPieData.map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              {/* Cluster Engagement Bar */}
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart2 className="w-5 h-5 text-primary" />
-                    Engagement by Cluster
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={clusterChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 10 }} />
-                      <YAxis stroke="hsl(var(--muted-foreground))" />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                      />
-                      <Bar dataKey="engagement" fill={CHART_COLORS[0]} name="Engagement %" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Cluster Details */}
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-primary" />
-                  Cluster-Concept Struggle Matrix
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {clusterInsights.map((cluster, i) => (
-                    <motion.div
-                      key={cluster.cluster}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className="p-4 rounded-lg bg-muted/50"
-                    >
-                      <div className="flex items-center gap-2 mb-3">
-                        <div 
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                        />
-                        <span className="font-medium">
-                          {cluster.cluster.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                        </span>
-                        <Badge variant="outline" className="ml-auto">
-                          {cluster.studentCount} students
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-2">Struggling with:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {cluster.strugglingConcepts.length > 0 ? (
-                          cluster.strugglingConcepts.map(concept => (
-                            <Badge key={concept} variant="secondary" className="text-xs">
-                              {concept}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-xs text-muted-foreground">No major struggles detected</span>
-                        )}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Worker Types Tab */}
-          <TabsContent value="worker-types" className="space-y-6">
-            <div className="grid lg:grid-cols-2 gap-6">
-              {/* Worker Type Distribution Pie */}
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <PieIcon className="w-5 h-5 text-primary" />
-                    Worker Type Distribution
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={employeeTypesWithPercentages}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={5}
-                        dataKey="count"
-                        nameKey="name"
-                      >
-                        {employeeTypesWithPercentages.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                        formatter={(value: unknown, name: unknown, props: unknown) => {
-                          const payload = (props as { payload?: { percentage?: string } })?.payload;
-                          const percentage = payload?.percentage ?? '';
-                          return [`${value} employees (${percentage}%)`, String(name)];
-                        }}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="mt-4 p-3 rounded-lg bg-muted/50 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Dominant Type</p>
-                    <p className="font-semibold" style={{ color: dominantEmployeeType.color }}>
-                      {dominantEmployeeType.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {dominantEmployeeType.count} employees ({dominantEmployeeType.percentage}%)
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Engagement by Worker Type */}
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-primary" />
-                    Engagement by Worker Type
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={employeeTypesWithPercentages} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis type="number" stroke="hsl(var(--muted-foreground))" domain={[0, 100]} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        width={150}
-                        stroke="hsl(var(--muted-foreground))"
-                        tick={{ fontSize: 11 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                        formatter={(value: unknown) => [`${value}%`, 'Engagement']}
-                      />
-                      <Bar dataKey="avgEngagement" name="Avg Engagement %" radius={[0, 4, 4, 0]}>
-                        {employeeTypesWithPercentages.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Worker Type Details */}
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  Worker Type Breakdown
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {employeeTypesWithPercentages
-                    .sort((a, b) => b.count - a.count)
-                    .map((type, i) => (
-                      <motion.div
-                        key={type.name}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        className="p-4 rounded-lg border"
-                        style={{ 
-                          backgroundColor: `${type.color}10`,
-                          borderColor: `${type.color}30`
-                        }}
-                      >
-                        <div className="flex items-center gap-2 mb-3">
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: type.color }}
-                          />
-                          <span className="font-medium text-sm">{type.name}</span>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground">Employees</span>
-                            <Badge variant="outline">
-                              {type.count} ({type.percentage}%)
-                            </Badge>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground">Avg Engagement</span>
-                            <Badge
-                              variant={type.avgEngagement >= 85 ? 'default' : 'secondary'}
-                            >
-                              {type.avgEngagement}%
-                            </Badge>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                </div>
-
-                <div className="mt-6 p-4 rounded-lg bg-muted/50">
-                  <h4 className="font-semibold mb-2 flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-primary" />
-                    Key Insights
-                  </h4>
-                  <ul className="space-y-2 text-sm text-muted-foreground">
-                    <li className="flex items-start gap-2">
-                      <ChevronRight className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                      <span>
-                        <strong className="text-foreground">Analyst/Investigator</strong> types show the highest engagement ({employeeTypesWithPercentages.find(t => t.name === 'Analyst/Investigator')?.avgEngagement}%), suggesting content resonates well with analytical learners
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <ChevronRight className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                      <span>
-                        Most employees identify as <strong className="text-foreground">{dominantEmployeeType.name}</strong> ({dominantEmployeeType.percentage}%), indicating a workforce strength in this area
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <ChevronRight className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                      <span>
-                        Consider tailoring content delivery to accommodate diverse learning styles across all {employeeTypesWithPercentages.length} worker types
-                      </span>
-                    </li>
-                  </ul>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>

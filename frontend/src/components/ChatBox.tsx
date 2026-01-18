@@ -74,6 +74,94 @@ const makeDefaultChatTitle = () => {
   return 'Untitled';
 };
 
+type LearningArchetypeScores = {
+  achieverDreamer: number;
+  helperMediator: number;
+  analystInvestigator: number;
+  championPersuader: number;
+  individualist: number;
+  problemSolverDetective: number;
+  challengerDebater: number;
+};
+
+const SCORE_MARKER = 'LEARNING_ARCHETYPE_SCORES:';
+const getLearningArchetypeStorageKey = (userId: string) =>
+  `learningArchetypeScores:${userId}`;
+const getLearningArchetypeCompletedKey = (userId: string) =>
+  `learningArchetypeCompleted:${userId}`;
+
+const extractLearningArchetypeScores = (
+  content: string
+): { cleanedContent: string; scores?: LearningArchetypeScores } => {
+  const markerIndex = content.indexOf(SCORE_MARKER);
+  if (markerIndex === -1) {
+    return { cleanedContent: content };
+  }
+
+  const jsonPayload = content.slice(markerIndex + SCORE_MARKER.length).trim();
+  try {
+    const parsed = JSON.parse(jsonPayload) as Partial<LearningArchetypeScores>;
+    const scores: LearningArchetypeScores = {
+      achieverDreamer: Number(parsed.achieverDreamer ?? 0),
+      helperMediator: Number(parsed.helperMediator ?? 0),
+      analystInvestigator: Number(parsed.analystInvestigator ?? 0),
+      championPersuader: Number(parsed.championPersuader ?? 0),
+      individualist: Number(parsed.individualist ?? 0),
+      problemSolverDetective: Number(parsed.problemSolverDetective ?? 0),
+      challengerDebater: Number(parsed.challengerDebater ?? 0),
+    };
+
+    const cleanedContent = content.slice(0, markerIndex).trim();
+    return {
+      cleanedContent: cleanedContent.length ? cleanedContent : content,
+      scores,
+    };
+  } catch {
+    return { cleanedContent: content };
+  }
+};
+
+const WORKER_ARCHETYPE_PROMPT =
+  'The student wants to run a learning archetype personality test. Ask a short quiz with 6-8 multiple-choice questions that help determine their learning style. Present one question at a time, label options A-D, and wait for the student to answer before moving to the next question. Do not provide results until all questions are answered, then summarize their likely learning archetype and tips tailored to it. After the summary, include one final line in this exact format (no code blocks): LEARNING_ARCHETYPE_SCORES: {"achieverDreamer":75,"helperMediator":60,"analystInvestigator":85,"championPersuader":45,"individualist":55,"problemSolverDetective":70,"challengerDebater":50}. Use integer scores from 0-100 that reflect the student\'s answers.';
+
+const buildCommandPayload = (
+  rawMessage: string,
+  userRole: 'student' | 'instructor'
+): { displayContent: string; sendContent: string } => {
+  const trimmed = rawMessage.trim();
+  const normalized = trimmed.toLowerCase();
+  const isWorkerArchetypeCommand =
+    normalized === 'worker archetype' ||
+    normalized === '/worker archetype' ||
+    normalized === 'worker-archetype' ||
+    normalized === '/worker-archetype' ||
+    normalized === 'workerarchetype' ||
+    normalized === '/workerarchetype' ||
+    normalized === 'worker arctype' ||
+    normalized === '/worker arctype' ||
+    normalized === 'worker-arctype' ||
+    normalized === '/worker-arctype' ||
+    normalized === 'workerarctype' ||
+    normalized === '/workerarctype';
+
+  if (userRole === 'student' && isWorkerArchetypeCommand) {
+    return {
+      displayContent: trimmed,
+      sendContent: WORKER_ARCHETYPE_PROMPT,
+    };
+  }
+
+  return { displayContent: trimmed, sendContent: trimmed };
+};
+
+const getDisplayContentForHistory = (content: string): string => {
+  if (content === WORKER_ARCHETYPE_PROMPT) {
+    return 'worker archetype';
+  }
+
+  return content;
+};
+
 const ChatBox = ({ lectureId, videoTitle, className = '' }: ChatBoxProps) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -138,7 +226,10 @@ const ChatBox = ({ lectureId, videoTitle, className = '' }: ChatBoxProps) => {
           setMessages(
             history.map((msg) => ({
               role: (msg.role === 'user' || msg.role === 'assistant' ? msg.role : 'user') as 'user' | 'assistant',
-              content: msg.content,
+              content:
+                msg.role === 'user'
+                  ? getDisplayContentForHistory(msg.content)
+                  : msg.content,
               timestamp: new Date(msg.timestamp),
               meta:
                 msg.role === 'assistant'
@@ -171,6 +262,11 @@ const ChatBox = ({ lectureId, videoTitle, className = '' }: ChatBoxProps) => {
     e.preventDefault();
     if (!inputValue.trim() || !user) return;
 
+    const { displayContent, sendContent } = buildCommandPayload(
+      inputValue,
+      user.role
+    );
+
     // Only allow sending messages within an explicitly created session.
     // New chats should be created via the +New button.
     if (!activeSessionId) {
@@ -181,7 +277,7 @@ const ChatBox = ({ lectureId, videoTitle, className = '' }: ChatBoxProps) => {
 
     const userMessage: ChatMessage = {
       role: 'user',
-      content: inputValue,
+      content: displayContent,
       timestamp: new Date(),
     };
 
@@ -193,7 +289,7 @@ const ChatBox = ({ lectureId, videoTitle, className = '' }: ChatBoxProps) => {
     try {
       const result = await sendChatMessage(
         user.id,
-        inputValue,
+        sendContent,
         lectureId,
         videoTitle,
         activeSessionId,
@@ -202,9 +298,23 @@ const ChatBox = ({ lectureId, videoTitle, className = '' }: ChatBoxProps) => {
       );
 
       if (result?.response) {
+        const { cleanedContent, scores } = extractLearningArchetypeScores(result.response);
+        if (scores) {
+          try {
+            const scoresKey = getLearningArchetypeStorageKey(user.id);
+            const completedKey = getLearningArchetypeCompletedKey(user.id);
+            localStorage.setItem(scoresKey, JSON.stringify(scores));
+            localStorage.setItem(completedKey, 'true');
+            window.dispatchEvent(
+              new CustomEvent('learning-archetype-updated', { detail: scores })
+            );
+          } catch {
+            // ignore storage errors
+          }
+        }
         const assistantMessage: ChatMessage = {
           role: 'assistant',
-          content: result.response,
+          content: cleanedContent,
           timestamp: new Date(),
           meta: {
             provider: result.provider,
