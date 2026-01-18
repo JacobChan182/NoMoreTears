@@ -32,17 +32,30 @@ const QuizDisplay = ({ quizContent, onClose }: QuizDisplayProps) => {
     const content = typeof quizContent === 'string' ? quizContent : JSON.stringify(quizContent);
     
     console.log('🔍 Parsing quiz content:', content.substring(0, 200));
+    console.log('🔍 Full content:', content);
     
-    // Split by question numbers (e.g., "1. **Question 1:**" or "**Question 1:**")
-    const questionBlocks = content.split(/\d+\.\s*\*\*Question\s+\d+:\*\*/i);
+    // Try multiple split patterns
+    let questionBlocks = content.split(/\n\n\d+\.\s*\*\*Question\s+\d+:\*\*/i);
+    
+    // If that didn't work, try without the leading newlines
+    if (questionBlocks.length <= 1) {
+      questionBlocks = content.split(/\d+\.\s*\*\*Question\s+\d+:\*\*/i);
+    }
+    
+    console.log('📦 Question blocks found:', questionBlocks.length);
     
     questionBlocks.forEach((block, idx) => {
       if (!block.trim() || idx === 0) return; // Skip empty blocks and preamble
       
-      console.log(`📝 Processing block ${idx}:`, block.substring(0, 100));
+      console.log(`📝 Processing block ${idx}:`, block.substring(0, 150));
       
       const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) return;
+      console.log(`📋 Lines in block ${idx}:`, lines);
+      
+      if (lines.length < 2) {
+        console.warn(`⚠️ Block ${idx} has too few lines:`, lines.length);
+        return;
+      }
 
       // First non-empty line is the question
       const questionText = lines[0].trim();
@@ -56,13 +69,18 @@ const QuizDisplay = ({ quizContent, onClose }: QuizDisplayProps) => {
         // Match options like "A) ...", "B) ...", etc.
         if (/^[A-D]\)\s+/.test(line)) {
           options.push(line);
+          console.log(`  ✓ Found option: ${line.substring(0, 30)}...`);
         }
         
-        // Match answer like "**Answer:** C) ..."
+        // Match answer like "**Answer:** C) ..." (with or without space before letter)
         if (/\*\*Answer:\*\*/i.test(line)) {
+          // Try to extract the letter (A, B, C, or D)
           const answerMatch = line.match(/\*\*Answer:\*\*\s*([A-D])\)/i);
           if (answerMatch) {
             correctAnswer = answerMatch[1];
+            console.log(`  ✓ Found answer: ${correctAnswer}`);
+          } else {
+            console.warn(`  ⚠️ Answer line found but couldn't extract letter:`, line);
           }
         }
       }
@@ -79,15 +97,19 @@ const QuizDisplay = ({ quizContent, onClose }: QuizDisplayProps) => {
           correctAnswer
         });
       } else {
-        console.warn(`⚠️ Incomplete question data:`, {
+        console.warn(`⚠️ Incomplete question data for block ${idx}:`, {
           hasQuestion: !!questionText,
+          question: questionText?.substring(0, 50),
           optionCount: options.length,
-          hasAnswer: !!correctAnswer
+          hasAnswer: !!correctAnswer,
+          allLines: lines
         });
       }
     });
 
     console.log(`📊 Total questions parsed: ${questions.length}`);
+    console.log(`📊 Parsed questions:`, questions);
+    
     return questions;
   };
 
